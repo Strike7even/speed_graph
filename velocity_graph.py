@@ -43,6 +43,14 @@ class GraphWindow(QMainWindow):
         
         # 초기 그래프 설정
         self.setup_graph_style()
+        self.draggable_point = None
+
+    def toggle_visibility(self):
+        """SHOW GRAPH 버튼 콜백"""
+        lines = self.ax.get_lines()
+        if lines:
+            lines[0].set_visible(not lines[0].get_visible())
+            self.canvas.draw_idle()
 
     def setup_graph_style(self):
         """그래프 기본 스타일 설정"""
@@ -65,6 +73,50 @@ class GraphWindow(QMainWindow):
         if self.DECELERATION_THRESHOLD <= acceleration <= self.ACCELERATION_THRESHOLD:
             return 'green'
         return 'red'
+
+    def update_graph(self, times, velocities):
+        """표로부터 받은 데이터로 그래프 업데이트"""
+        try:
+            self.ax.clear()
+            self.setup_graph_style()
+            
+            if times and velocities:
+                # 분석 속도 (실선)
+                line1, = self.ax.plot(times, velocities, 
+                                    label='Optimization Velocity',
+                                    marker='o', 
+                                    fillstyle='none',
+                                    markersize=8)
+                
+                # 실제 속도 (계단 형식)
+                if len(times) > 1:
+                    self.ax.step(times, velocities,
+                            where='post',
+                            label='Video Analysis Velocity',
+                            marker='s',
+                            fillstyle='none',
+                            markersize=8)
+                
+                # 주석 추가
+                annotations = []
+                for x, y in zip(times, velocities):
+                    annotation = self.ax.annotate(
+                        f'{y:.1f}', (x, y),
+                        textcoords="offset points",
+                        xytext=(0, 15),
+                        ha='center',
+                        fontsize=8
+                    )
+                    annotations.append(annotation)
+                
+                # 드래그 기능 추가
+                self.draggable_point = self.DraggablePoint(line1, annotations, self.ax, self)
+                self.draggable_point.connect()
+            
+            self.canvas.draw()
+            
+        except Exception as e:
+            print(f"그래프 업데이트 중 오류: {e}")
 
     class DraggablePoint:
         def __init__(self, line, annotations, ax, parent):
@@ -167,54 +219,3 @@ class GraphWindow(QMainWindow):
             self.line.figure.canvas.mpl_disconnect(self.cidpress)
             self.line.figure.canvas.mpl_disconnect(self.cidrelease)
             self.line.figure.canvas.mpl_disconnect(self.cidmotion)
-
-        def update_graph(self, times, velocities):
-            """표로부터 받은 데이터로 그래프 업데이트"""
-            try:
-                self.ax.clear()
-                self.setup_graph_style()
-                
-                if times and velocities:
-                    # 분석 속도 (실선)
-                    line1, = self.ax.plot(times, velocities, 
-                                        label='Optimization Velocity',
-                                        marker='o', 
-                                        fillstyle='none',
-                                        markersize=8)
-                    
-                    # 실제 속도 (계단 형식)
-                    if len(times) > 1:
-                        self.ax.step(times, velocities,
-                                where='post',
-                                label='Video Analysis Velocity',
-                                marker='s',
-                                fillstyle='none',
-                                markersize=8)
-                    
-                    # 주석 추가
-                    annotations = []
-                    for x, y in zip(times, velocities):
-                        annotation = self.ax.annotate(
-                            f'{y:.1f}', (x, y),
-                            textcoords="offset points",
-                            xytext=(0, 15),
-                            ha='center',
-                            fontsize=8
-                        )
-                        annotations.append(annotation)
-                    
-                    # 드래그 기능 추가
-                    self.draggable_point = self.DraggablePoint(line1, annotations, self.ax, self)
-                    self.draggable_point.connect()
-                
-                self.canvas.draw()
-                
-            except Exception as e:
-                print(f"그래프 업데이트 중 오류: {e}")
-
-        def toggle_visibility(self):
-            """SHOW GRAPH 버튼 콜백"""
-            lines = self.ax.get_lines()
-            if lines:
-                lines[0].set_visible(not lines[0].get_visible())
-                self.canvas.draw_idle()
