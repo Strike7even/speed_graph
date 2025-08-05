@@ -257,6 +257,10 @@ class TableWindow(QMainWindow):
         self.load_button.clicked.connect(self._load_project)
         self.settings_button.clicked.connect(self._open_settings)
         
+        # 테이블 데이터 변경 시그널 연결
+        self.main_table.itemChanged.connect(self._on_table_item_changed)
+        self.fps_table.itemChanged.connect(self._on_fps_changed)
+        
         # Data Bridge 시그널 연결
         if self.data_bridge:
             self.data_bridge.table_data_updated.connect(self._on_data_updated)
@@ -266,13 +270,75 @@ class TableWindow(QMainWindow):
     
     def _add_segment(self):
         """구간 추가"""
-        # TODO: Phase 2에서 구현
-        self.logger.info("구간 추가 요청")
+        try:
+            current_rows = self.main_table.rowCount()
+            new_row = current_rows
+            segment_num = current_rows - 1  # 헤더 2행 제외
+            
+            # 새 행 추가
+            self.main_table.insertRow(new_row)
+            
+            # 새 구간 데이터 설정
+            self._add_segment_row(new_row, segment_num)
+            
+            # Data Bridge의 세그먼트 데이터에도 추가
+            if self.data_bridge:
+                project_data = self.data_bridge.get_project_data()
+                new_segment = {
+                    'segment_num': segment_num,
+                    'frame_start': '',
+                    'frame_end': '',
+                    'distance': '',
+                    'avg_time': 0.0,
+                    'avg_velocity': 0.0,
+                    'acc_time': 0.0,
+                    'acc_velocity': 0.0,
+                    'acceleration': 0.0,
+                    'duration': 0.0,
+                    'acc_dec_type': ''
+                }
+                project_data['segments'].append(new_segment)
+                
+                # 변경사항 플래그 설정
+                self.data_bridge._unsaved_changes = True
+            
+            self.logger.info(f"구간 {segment_num} 추가 완료")
+            
+        except Exception as e:
+            self.logger.error(f"구간 추가 실패: {e}")
+            self._show_error_message("구간 추가 오류", f"구간 추가 중 오류가 발생했습니다:\n{e}")
     
     def _remove_segment(self):
         """구간 제거"""
-        # TODO: Phase 2에서 구현
-        self.logger.info("구간 제거 요청")
+        try:
+            current_rows = self.main_table.rowCount()
+            
+            # 최소 구간 수 확인 (헤더 2행 + 최소 1개 구간)
+            if current_rows <= 3:
+                self._show_info_message("구간 제거", "최소 1개의 구간은 유지되어야 합니다.")
+                return
+            
+            # 마지막 구간 제거
+            last_row = current_rows - 1
+            segment_num = last_row - 1  # 헤더 2행 제외
+            
+            # 테이블에서 행 제거
+            self.main_table.removeRow(last_row)
+            
+            # Data Bridge의 세그먼트 데이터에서도 제거
+            if self.data_bridge:
+                project_data = self.data_bridge.get_project_data()
+                if project_data['segments']:
+                    project_data['segments'].pop()  # 마지막 요소 제거
+                    
+                    # 변경사항 플래그 설정
+                    self.data_bridge._unsaved_changes = True
+            
+            self.logger.info(f"구간 {segment_num} 제거 완료")
+            
+        except Exception as e:
+            self.logger.error(f"구간 제거 실패: {e}")
+            self._show_error_message("구간 제거 오류", f"구간 제거 중 오류가 발생했습니다:\n{e}")
     
     def _fetch_distance_data(self):
         """거리 데이터 가져오기"""
@@ -294,13 +360,82 @@ class TableWindow(QMainWindow):
     
     def _save_project(self):
         """프로젝트 저장"""
-        # TODO: Phase 2에서 파일 다이얼로그 구현
-        self.logger.info("프로젝트 저장 요청")
+        try:
+            from PyQt5.QtWidgets import QFileDialog
+            
+            # 현재 테이블 데이터를 Data Bridge로 전송
+            self._collect_and_send_table_data()
+            
+            # 파일 다이얼로그 열기
+            file_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "프로젝트 저장",
+                "",
+                "JSON files (*.json);;모든 파일 (*)"
+            )
+            
+            if file_path:
+                # 확장자가 없으면 .json 추가
+                if not file_path.endswith('.json'):
+                    file_path += '.json'
+                
+                # Data Bridge를 통해 저장
+                if self.data_bridge:
+                    success = self.data_bridge.save_project(file_path)
+                    if success:
+                        self._show_info_message("저장 완료", f"프로젝트가 저장되었습니다:\n{file_path}")
+                        self.logger.info(f"프로젝트 저장 완료: {file_path}")
+                    else:
+                        self._show_error_message("저장 실패", "프로젝트 저장에 실패했습니다.")
+                else:
+                    self._show_error_message("저장 오류", "Data Bridge가 연결되지 않았습니다.")
+            
+        except Exception as e:
+            self.logger.error(f"프로젝트 저장 중 오류: {e}")
+            self._show_error_message("저장 오류", f"프로젝트 저장 중 오류가 발생했습니다:\n{e}")
     
     def _load_project(self):
         """프로젝트 불러오기"""
-        # TODO: Phase 2에서 파일 다이얼로그 구현
-        self.logger.info("프로젝트 불러오기 요청")
+        try:
+            from PyQt5.QtWidgets import QFileDialog, QMessageBox
+            
+            # 저장되지 않은 변경사항 확인
+            if self.data_bridge and self.data_bridge.has_unsaved_changes():
+                reply = QMessageBox.question(
+                    self,
+                    "저장 확인",
+                    "저장하지 않은 변경사항이 있습니다.\n계속하시겠습니까?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No
+                )
+                
+                if reply == QMessageBox.No:
+                    return
+            
+            # 파일 다이얼로그 열기
+            file_path, _ = QFileDialog.getOpenFileName(
+                self,
+                "프로젝트 불러오기",
+                "",
+                "JSON files (*.json);;모든 파일 (*)"
+            )
+            
+            if file_path:
+                if self.data_bridge:
+                    success = self.data_bridge.load_project(file_path)
+                    if success:
+                        # 테이블에 로드된 데이터 표시
+                        self._refresh_table_from_data()
+                        self._show_info_message("불러오기 완료", f"프로젝트를 불러왔습니다:\n{file_path}")
+                        self.logger.info(f"프로젝트 불러오기 완료: {file_path}")
+                    else:
+                        self._show_error_message("불러오기 실패", "프로젝트 불러오기에 실패했습니다.")
+                else:
+                    self._show_error_message("불러오기 오류", "Data Bridge가 연결되지 않았습니다.")
+            
+        except Exception as e:
+            self.logger.error(f"프로젝트 불러오기 중 오류: {e}")
+            self._show_error_message("불러오기 오류", f"프로젝트 불러오기 중 오류가 발생했습니다:\n{e}")
     
     def _open_settings(self):
         """설정 열기"""
@@ -309,10 +444,160 @@ class TableWindow(QMainWindow):
     
     # === 데이터 업데이트 핸들러 ===
     
+    def _on_table_item_changed(self, item):
+        """테이블 아이템 변경 처리"""
+        try:
+            row = item.row()
+            col = item.column()
+            
+            # 헤더 행은 무시
+            if row < 2:
+                return
+            
+            # 사용자 입력 가능한 셀만 처리
+            if col in [1, 2, 6, 7, 8]:  # frame_start, frame_end, acc_time, acc_velocity, acceleration
+                self.logger.debug(f"테이블 셀 변경: ({row}, {col}) = {item.text()}")
+                
+                # 실시간으로 Data Bridge에 업데이트
+                self._collect_and_send_table_data()
+        
+        except Exception as e:
+            self.logger.error(f"테이블 아이템 변경 처리 실패: {e}")
+    
+    def _on_fps_changed(self, item):
+        """FPS 값 변경 처리"""
+        try:
+            if item.row() == 0 and item.column() == 1:
+                self.logger.debug(f"FPS 값 변경: {item.text()}")
+                
+                # 실시간으로 Data Bridge에 업데이트
+                self._collect_and_send_table_data()
+        
+        except Exception as e:
+            self.logger.error(f"FPS 변경 처리 실패: {e}")
+    
     def _on_data_updated(self, data):
         """데이터 업데이트 처리"""
-        # TODO: Phase 4에서 구현
-        self.logger.debug("테이블 데이터 업데이트 수신")
+        try:
+            self.logger.debug("테이블 데이터 업데이트 수신")
+            # Phase 4에서 역방향 업데이트 구현 예정
+            
+        except Exception as e:
+            self.logger.error(f"데이터 업데이트 처리 실패: {e}")
+    
+    # === 데이터 수집 및 새로고침 메서드 ===
+    
+    def _collect_and_send_table_data(self):
+        """테이블 데이터 수집 후 Data Bridge로 전송"""
+        try:
+            segments_data = []
+            
+            # 메인 테이블에서 데이터 행만 처리 (행 2부터)
+            for row in range(2, self.main_table.rowCount()):
+                segment_data = {}
+                
+                # 각 열에서 데이터 추출
+                segment_data['segment_num'] = self._get_cell_value(row, 0)
+                segment_data['frame_start'] = self._get_cell_value(row, 1)
+                segment_data['frame_end'] = self._get_cell_value(row, 2)
+                segment_data['distance'] = self._get_cell_value(row, 3)
+                segment_data['avg_time'] = self._get_cell_value(row, 4)
+                segment_data['avg_velocity'] = self._get_cell_value(row, 5)
+                segment_data['acc_time'] = self._get_cell_value(row, 6)
+                segment_data['acc_velocity'] = self._get_cell_value(row, 7)
+                segment_data['acceleration'] = self._get_cell_value(row, 8)
+                segment_data['duration'] = self._get_cell_value(row, 9)
+                segment_data['acc_dec_type'] = self._get_cell_value(row, 10)
+                
+                segments_data.append(segment_data)
+            
+            # FPS 값 추출
+            fps_value = self._get_cell_value_from_table(self.fps_table, 0, 1)
+            
+            # Data Bridge로 전송
+            if self.data_bridge:
+                table_data = {
+                    'segments': segments_data,
+                    'settings': {
+                        'fps': float(fps_value) if fps_value else 30.0
+                    }
+                }
+                self.data_bridge.update_from_table(table_data)
+                self.logger.debug("테이블 데이터 전송 완료")
+            
+        except Exception as e:
+            self.logger.error(f"테이블 데이터 수집 실패: {e}")
+    
+    def _get_cell_value(self, row, col):
+        """테이블 셀 값 가져오기"""
+        item = self.main_table.item(row, col)
+        return item.text().strip() if item else ""
+    
+    def _get_cell_value_from_table(self, table, row, col):
+        """특정 테이블에서 셀 값 가져오기"""
+        item = table.item(row, col)
+        return item.text().strip() if item else ""
+    
+    def _refresh_table_from_data(self):
+        """Data Bridge의 데이터로 테이블 새로고침"""
+        try:
+            if not self.data_bridge:
+                return
+            
+            project_data = self.data_bridge.get_project_data()
+            segments = project_data.get('segments', [])
+            settings = project_data.get('settings', {})
+            
+            # 기존 데이터 행 제거 (헤더 제외)
+            while self.main_table.rowCount() > 2:
+                self.main_table.removeRow(2)
+            
+            # 세그먼트 데이터 행 추가
+            for i, segment in enumerate(segments):
+                row = i + 2  # 헤더 다음부터
+                self.main_table.insertRow(row)
+                
+                # 각 셀에 데이터 설정
+                self._set_cell_value(row, 0, str(segment.get('segment_num', i + 1)))
+                self._set_cell_value(row, 1, str(segment.get('frame_start', '')))
+                self._set_cell_value(row, 2, str(segment.get('frame_end', '')))
+                self._set_cell_value(row, 3, str(segment.get('distance', '')))
+                self._set_cell_value(row, 4, str(segment.get('avg_time', '')))
+                self._set_cell_value(row, 5, str(segment.get('avg_velocity', '')))
+                self._set_cell_value(row, 6, str(segment.get('acc_time', '')))
+                self._set_cell_value(row, 7, str(segment.get('acc_velocity', '')))
+                self._set_cell_value(row, 8, str(segment.get('acceleration', '')))
+                self._set_cell_value(row, 9, str(segment.get('duration', '')))
+                self._set_cell_value(row, 10, str(segment.get('acc_dec_type', '')))
+                
+                # 행 높이 설정
+                self.main_table.setRowHeight(row, 30)
+            
+            # FPS 값 설정
+            fps_value = settings.get('fps', 30.0)
+            fps_item = self.fps_table.item(0, 1)
+            if fps_item:
+                fps_item.setText(str(fps_value))
+            
+            self.logger.debug("테이블 새로고침 완료")
+            
+        except Exception as e:
+            self.logger.error(f"테이블 새로고침 실패: {e}")
+    
+    def _set_cell_value(self, row, col, value):
+        """테이블 셀 값 설정"""
+        item = QTableWidgetItem(str(value))
+        item.setTextAlignment(Qt.AlignCenter)
+        
+        # 색상 설정
+        if col in [1, 2, 8, 9]:  # 사용자 입력
+            item.setBackground(QBrush(QColor(USER_INPUT_COLOR)))
+        elif col in [3]:  # PC-Crash 연동
+            item.setBackground(QBrush(QColor(PC_CRASH_INTEGRATION_COLOR)))
+        else:  # 자동 계산
+            item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
+        
+        self.main_table.setItem(row, col, item)
     
     # === 유틸리티 메서드 ===
     

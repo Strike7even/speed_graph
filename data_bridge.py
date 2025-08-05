@@ -140,8 +140,146 @@ class DataBridge(QObject):
     
     def _calculate_graph_data(self):
         """테이블 데이터를 기반으로 그래프 데이터 계산"""
-        # TODO: Phase 2에서 구현
-        pass
+        try:
+            self.logger.debug("그래프 데이터 계산 시작")
+            
+            # 기존 최적화 속도 데이터 초기화
+            optimization_velocity = []
+            video_analysis_velocity = []
+            
+            current_time = 0.0
+            fps = self._project_data['settings']['fps']
+            
+            for segment in self._project_data['segments']:
+                # 구간 데이터 추출
+                frame_start = self._parse_float(segment.get('frame_start', 0))
+                frame_end = self._parse_float(segment.get('frame_end', 0))
+                distance = self._parse_float(segment.get('distance', 0))
+                avg_time = self._parse_float(segment.get('avg_time', 0))
+                avg_velocity = self._parse_float(segment.get('avg_velocity', 0))
+                acc_time = self._parse_float(segment.get('acc_time', 0))
+                acc_velocity = self._parse_float(segment.get('acc_velocity', 0))
+                acceleration = self._parse_float(segment.get('acceleration', 0))
+                duration = self._parse_float(segment.get('duration', 0))
+                
+                # 세그먼트 시간 정보 계산
+                if frame_start > 0 and frame_end > 0 and fps > 0:
+                    segment_duration = (frame_end - frame_start) / fps
+                    avg_velocity_ms = avg_velocity / 3.6 if avg_velocity > 0 else 0  # km/h → m/s
+                    
+                    # Video Analysis 데이터 (계단식)
+                    video_analysis_velocity.append({
+                        'time': current_time,
+                        'velocity': avg_velocity
+                    })
+                    video_analysis_velocity.append({
+                        'time': current_time + segment_duration,
+                        'velocity': avg_velocity
+                    })
+                    
+                    # Optimization 데이터 (가속도 적용)
+                    if acc_time > 0 and acc_velocity > 0:
+                        # 가속/감속 적용된 최적화 속도
+                        optimization_velocity.append({
+                            'time': current_time,
+                            'velocity': avg_velocity
+                        })
+                        
+                        # 가속/감속 구간
+                        optimization_velocity.append({
+                            'time': current_time + acc_time,
+                            'velocity': acc_velocity
+                        })
+                        
+                        # 남은 구간 (일정 속도)
+                        remaining_time = segment_duration - acc_time
+                        if remaining_time > 0:
+                            optimization_velocity.append({
+                                'time': current_time + segment_duration,
+                                'velocity': acc_velocity
+                            })
+                    else:
+                        # 일정 속도 유지
+                        optimization_velocity.append({
+                            'time': current_time,
+                            'velocity': avg_velocity
+                        })
+                        optimization_velocity.append({
+                            'time': current_time + segment_duration,
+                            'velocity': avg_velocity
+                        })
+                    
+                    current_time += segment_duration
+            
+            # 그래프 데이터 업데이트
+            self._project_data['graph_data']['optimization_velocity'] = optimization_velocity
+            self._project_data['graph_data']['video_analysis_velocity'] = video_analysis_velocity
+            
+            # 테이블에서 계산된 값들 업데이트
+            self._update_calculated_values()
+            
+            self.logger.debug(f"그래프 데이터 계산 완료: {len(optimization_velocity)}개 포인트")
+            
+        except Exception as e:
+            self.logger.error(f"그래프 데이터 계산 실패: {e}")
+            self.error_occurred.emit(f"그래프 데이터 계산 중 오류: {e}")
+    
+    def _parse_float(self, value, default=0.0):
+        """문자열을 float로 안전하게 변환"""
+        try:
+            if isinstance(value, (int, float)):
+                return float(value)
+            elif isinstance(value, str) and value.strip():
+                return float(value.strip())
+            return default
+        except (ValueError, TypeError):
+            return default
+    
+    def _update_calculated_values(self):
+        """테이블의 계산된 값들 업데이트"""
+        try:
+            fps = self._project_data['settings']['fps']
+            max_acc = self._project_data['settings']['max_acceleration']
+            max_dec = self._project_data['settings']['max_deceleration']
+            
+            for segment in self._project_data['segments']:
+                # 프레임 정보가 있는 경우 duration 계산
+                frame_start = self._parse_float(segment.get('frame_start', 0))
+                frame_end = self._parse_float(segment.get('frame_end', 0))
+                distance = self._parse_float(segment.get('distance', 0))
+                
+                if frame_start > 0 and frame_end > 0 and fps > 0:
+                    duration = (frame_end - frame_start) / fps
+                    segment['duration'] = round(duration, 3)
+                    
+                    # 평균 속도 계산 (거리와 시간이 있는 경우)
+                    if distance > 0 and duration > 0:
+                        avg_velocity_ms = distance / duration  # m/s
+                        avg_velocity_kmh = avg_velocity_ms * 3.6  # km/h
+                        segment['avg_velocity'] = round(avg_velocity_kmh, 2)
+                        segment['avg_time'] = round(duration, 3)
+                
+                # 가속도 검증
+                acceleration = self._parse_float(segment.get('acceleration', 0))
+                if acceleration != 0:
+                    acc_dec_type = ""
+                    if acceleration > 0:
+                        if acceleration <= max_acc:
+                            acc_dec_type = "Acc (Valid)"
+                        else:
+                            acc_dec_type = "Acc (Invalid)"
+                    else:
+                        if acceleration >= max_dec:
+                            acc_dec_type = "Dec (Valid)"
+                        else:
+                            acc_dec_type = "Dec (Invalid)"
+                    
+                    segment['acc_dec_type'] = acc_dec_type
+                
+            self.logger.debug("계산된 값 업데이트 완료")
+            
+        except Exception as e:
+            self.logger.error(f"계산된 값 업데이트 실패: {e}")
     
     def _update_table_from_optimization_data(self):
         """최적화된 그래프 데이터를 기반으로 테이블 업데이트"""
