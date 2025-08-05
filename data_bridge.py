@@ -283,8 +283,89 @@ class DataBridge(QObject):
     
     def _update_table_from_optimization_data(self):
         """최적화된 그래프 데이터를 기반으로 테이블 업데이트"""
-        # TODO: Phase 4에서 구현
-        pass
+        try:
+            self.logger.debug("그래프 데이터로부터 테이블 역산 시작")
+            
+            optimization_data = self._project_data['graph_data'].get('optimization_velocity', [])
+            if not optimization_data:
+                return
+            
+            fps = self._project_data['settings']['fps']
+            segments = self._project_data['segments']
+            
+            # 각 구간별로 최적화 데이터 분석
+            for i, segment in enumerate(segments):
+                frame_start = self._parse_float(segment.get('frame_start', 0))
+                frame_end = self._parse_float(segment.get('frame_end', 0))
+                
+                if frame_start == 0 or frame_end == 0 or fps == 0:
+                    continue
+                
+                # 구간 시간 범위 계산
+                segment_start_time = 0.0
+                if i > 0:
+                    # 이전 구간들의 시간 합산
+                    for j in range(i):
+                        prev_start = self._parse_float(segments[j].get('frame_start', 0))
+                        prev_end = self._parse_float(segments[j].get('frame_end', 0))
+                        if prev_start > 0 and prev_end > 0:
+                            segment_start_time += (prev_end - prev_start) / fps
+                
+                segment_end_time = segment_start_time + (frame_end - frame_start) / fps
+                
+                # 해당 구간의 최적화 데이터 찾기
+                segment_opt_data = []
+                for point in optimization_data:
+                    if segment_start_time <= point['time'] <= segment_end_time:
+                        segment_opt_data.append(point)
+                
+                if len(segment_opt_data) >= 2:
+                    # 가속도 구간 분석
+                    first_point = segment_opt_data[0]
+                    last_point = segment_opt_data[-1]
+                    
+                    # 초기 속도와 최종 속도
+                    initial_velocity = first_point['velocity']
+                    final_velocity = last_point['velocity']
+                    
+                    # 가속도가 있는 경우
+                    if abs(final_velocity - initial_velocity) > 0.1:  # 0.1 km/h 임계값
+                        # 가속도 계산
+                        time_diff = last_point['time'] - first_point['time']
+                        if time_diff > 0:
+                            vel_diff_ms = (final_velocity - initial_velocity) / 3.6  # km/h to m/s
+                            acceleration = vel_diff_ms / time_diff
+                            
+                            # 테이블 업데이트
+                            segment['acceleration'] = round(acceleration, 2)
+                            segment['acc_time'] = round(time_diff, 3)
+                            segment['acc_velocity'] = round(final_velocity, 2)
+                            
+                            # 가속도 유효성 검증
+                            max_acc = self._project_data['settings']['max_acceleration']
+                            max_dec = self._project_data['settings']['max_deceleration']
+                            
+                            if acceleration > 0:
+                                if acceleration <= max_acc:
+                                    segment['acc_dec_type'] = "Acc (Valid)"
+                                else:
+                                    segment['acc_dec_type'] = "Acc (Invalid)"
+                            else:
+                                if acceleration >= max_dec:
+                                    segment['acc_dec_type'] = "Dec (Valid)"
+                                else:
+                                    segment['acc_dec_type'] = "Dec (Invalid)"
+                    else:
+                        # 일정 속도 유지
+                        segment['acceleration'] = 0.0
+                        segment['acc_time'] = 0.0
+                        segment['acc_velocity'] = round(initial_velocity, 2)
+                        segment['acc_dec_type'] = ""
+            
+            self.logger.debug("테이블 역산 완료")
+            
+        except Exception as e:
+            self.logger.error(f"테이블 역산 실패: {e}")
     
     # === Ground Truth 데이터 처리 ===
     

@@ -455,7 +455,7 @@ class TableWindow(QMainWindow):
                 return
             
             # 사용자 입력 가능한 셀만 처리
-            if col in [1, 2, 6, 7, 8]:  # frame_start, frame_end, acc_time, acc_velocity, acceleration
+            if col in [1, 2, 3, 8]:  # frame_start, frame_end, distance, acceleration
                 self.logger.debug(f"테이블 셀 변경: ({row}, {col}) = {item.text()}")
                 
                 # 실시간으로 Data Bridge에 업데이트
