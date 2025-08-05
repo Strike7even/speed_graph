@@ -480,10 +480,19 @@ class TableWindow(QMainWindow):
         """데이터 업데이트 처리"""
         try:
             self.logger.debug("테이블 데이터 업데이트 수신")
-            # Phase 4에서 역방향 업데이트 구현 예정
+            
+            # 데이터가 dict 형태로 전달되는지 확인
+            if isinstance(data, dict) and 'segments' in data:
+                # Data Bridge의 세그먼트 데이터로 테이블 새로고침
+                if self.data_bridge:
+                    # 기존 데이터 업데이트
+                    self.data_bridge._project_data['segments'] = data['segments']
+                    # 테이블 새로고침
+                    self._refresh_table_from_data()
             
         except Exception as e:
             self.logger.error(f"데이터 업데이트 처리 실패: {e}")
+            self._show_error_message("데이터 업데이트 오류", f"테이블 업데이트 중 오류가 발생했습니다: {e}")
     
     # === 데이터 수집 및 새로고침 메서드 ===
     

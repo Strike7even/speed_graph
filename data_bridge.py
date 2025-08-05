@@ -130,7 +130,7 @@ class DataBridge(QObject):
             self._unsaved_changes = True
             
             # 테이블 윈도우에 업데이트 알림
-            self.table_data_updated.emit(self._project_data['segments'])
+            self.table_data_updated.emit({'segments': self._project_data['segments']})
             
             self.logger.debug("그래프 데이터 업데이트 완료")
             
