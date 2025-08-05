@@ -101,7 +101,7 @@ class TableWindow(QMainWindow):
         self.main_table = QTableWidget()
         
         # 기본 테이블 설정
-        self.main_table.setRowCount(4)  # 헤더 2행 + 데이터 2행
+        self.main_table.setRowCount(6)  # 헤더 2행 + 구간1(2행) + 구간2(2행)
         self.main_table.setColumnCount(11)
         
         # 헤더 숨기기
@@ -151,21 +151,69 @@ class TableWindow(QMainWindow):
             self.main_table.setColumnWidth(col, 100)
         
         # 행 높이 설정
-        self.main_table.setRowHeight(0, 50)
-        self.main_table.setRowHeight(1, 50)
-        for row in range(2, 4):
+        self.main_table.setRowHeight(0, 50)  # 헤더 1행
+        self.main_table.setRowHeight(1, 50)  # 헤더 2행
+        for row in range(2, 6):  # 구간 데이터 행들
             self.main_table.setRowHeight(row, 30)
     
     def _setup_initial_data(self):
         """초기 데이터 설정"""
-        # 첫 번째 구간 데이터
-        self._add_segment_row(2, 1)
+        # 첫 번째 구간 데이터 (2행 사용: Time행, Vel행)
+        self._add_segment_data(2, 1)
         
-        # 두 번째 구간 데이터
-        self._add_segment_row(3, 2)
+        # 두 번째 구간 데이터 (2행 사용: Time행, Vel행)
+        self._add_segment_data(4, 2)
+    
+    def _add_segment_data(self, start_row, segment_num):
+        """구간 데이터 추가 (2행 사용: Time행, Vel행)"""
+        # 첫 번째 행 (Time 행)
+        time_row = start_row
+        # 두 번째 행 (Vel 행)
+        vel_row = start_row + 1
+        
+        # 구간 번호 (2행에 걸쳐 병합, 현재는 첫 번째 행에만 표시)
+        segment_item = QTableWidgetItem(str(segment_num))
+        segment_item.setTextAlignment(Qt.AlignCenter)
+        self.main_table.setItem(time_row, 0, segment_item)
+        
+        # 빈 셀로 두 번째 행 구간 번호 셀
+        empty_item = QTableWidgetItem("")
+        self.main_table.setItem(vel_row, 0, empty_item)
+        
+        # Time 행 설정
+        for col in range(1, 11):
+            item = QTableWidgetItem("")
+            item.setTextAlignment(Qt.AlignCenter)
+            
+            # Time 행의 색상 설정
+            if col in [1, 2, 8]:  # frame_start, frame_end, acceleration (사용자 입력)
+                item.setBackground(QBrush(QColor(USER_INPUT_COLOR)))
+            elif col in [3]:  # distance (PC-Crash 연동)
+                item.setBackground(QBrush(QColor(PC_CRASH_INTEGRATION_COLOR)))
+            elif col in [4, 6]:  # avg_time, acc_time (자동 계산)
+                item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
+            else:  # 나머지 (빈 셀)
+                pass
+            
+            self.main_table.setItem(time_row, col, item)
+        
+        # Vel 행 설정
+        for col in range(1, 11):
+            item = QTableWidgetItem("")
+            item.setTextAlignment(Qt.AlignCenter)
+            
+            # Vel 행의 색상 설정
+            if col in [5, 7]:  # avg_velocity, acc_velocity (자동 계산)
+                item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
+            elif col in [9, 10]:  # duration, acc_dec_type (자동 계산)
+                item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
+            else:  # 나머지 (빈 셀)
+                pass
+            
+            self.main_table.setItem(vel_row, col, item)
     
     def _add_segment_row(self, row, segment_num):
-        """구간 행 추가"""
+        """기존 메서드 유지 (호환성)"""
         # 구간 번호
         item = QTableWidgetItem(str(segment_num))
         item.setTextAlignment(Qt.AlignCenter)
@@ -272,14 +320,18 @@ class TableWindow(QMainWindow):
         """구간 추가"""
         try:
             current_rows = self.main_table.rowCount()
-            new_row = current_rows
-            segment_num = current_rows - 1  # 헤더 2행 제외
+            segment_num = (current_rows - 2) // 2 + 1  # 헤더 2행 제외, 2행씩 그룹
             
-            # 새 행 추가
-            self.main_table.insertRow(new_row)
+            # 새 구간을 위한 2행 추가
+            self.main_table.insertRow(current_rows)
+            self.main_table.insertRow(current_rows + 1)
             
-            # 새 구간 데이터 설정
-            self._add_segment_row(new_row, segment_num)
+            # 새 구간 데이터 설정 (2행 사용)
+            self._add_segment_data(current_rows, segment_num)
+            
+            # 행 높이 설정
+            self.main_table.setRowHeight(current_rows, 30)
+            self.main_table.setRowHeight(current_rows + 1, 30)
             
             # Data Bridge의 세그먼트 데이터에도 추가
             if self.data_bridge:
@@ -313,17 +365,17 @@ class TableWindow(QMainWindow):
         try:
             current_rows = self.main_table.rowCount()
             
-            # 최소 구간 수 확인 (헤더 2행 + 최소 1개 구간)
-            if current_rows <= 3:
+            # 최소 구간 수 확인 (헤더 2행 + 최소 1개 구간 2행 = 4행)
+            if current_rows <= 4:
                 self._show_info_message("구간 제거", "최소 1개의 구간은 유지되어야 합니다.")
                 return
             
-            # 마지막 구간 제거
-            last_row = current_rows - 1
-            segment_num = last_row - 1  # 헤더 2행 제외
+            # 마지막 구간 제거 (2행)
+            segment_num = (current_rows - 2) // 2  # 현재 마지막 구간 번호
             
-            # 테이블에서 행 제거
-            self.main_table.removeRow(last_row)
+            # 테이블에서 마지막 2행 제거
+            self.main_table.removeRow(current_rows - 1)  # Vel 행
+            self.main_table.removeRow(current_rows - 2)  # Time 행
             
             # Data Bridge의 세그먼트 데이터에서도 제거
             if self.data_bridge:
@@ -458,11 +510,43 @@ class TableWindow(QMainWindow):
             if col in [1, 2, 3, 8]:  # frame_start, frame_end, distance, acceleration
                 self.logger.debug(f"테이블 셀 변경: ({row}, {col}) = {item.text()}")
                 
+                # END 프레임 변경 시 다음 구간 START 프레임 자동 업데이트
+                if col == 2:  # frame_end 변경
+                    self._auto_fill_next_segment_start(row, item.text())
+                
                 # 실시간으로 Data Bridge에 업데이트
                 self._collect_and_send_table_data()
         
         except Exception as e:
             self.logger.error(f"테이블 아이템 변경 처리 실패: {e}")
+    
+    def _auto_fill_next_segment_start(self, current_row, end_frame_value):
+        """다음 구간의 START 프레임 자동 입력"""
+        try:
+            if not end_frame_value or not end_frame_value.strip():
+                return
+            
+            # 현재 구간이 어느 구간인지 파악 (2행씩 그룹)
+            # 구간1: 행 2,3 / 구간2: 행 4,5 / 구간3: 행 6,7 ...
+            current_segment = (current_row - 2) // 2 + 1
+            next_segment_time_row = current_row + 2  # 다음 구간의 Time 행
+            
+            # 다음 구간이 존재하는지 확인
+            if next_segment_time_row < self.main_table.rowCount():
+                # 다음 구간의 START 프레임 (col 1) 자동 입력
+                next_start_item = self.main_table.item(next_segment_time_row, 1)
+                if next_start_item:
+                    # 시그널 연결을 일시적으로 해제하여 무한 루프 방지
+                    self.main_table.itemChanged.disconnect(self._on_table_item_changed)
+                    next_start_item.setText(end_frame_value)
+                    self.main_table.itemChanged.connect(self._on_table_item_changed)
+                    
+                    self.logger.debug(f"구간 {current_segment + 1} START 프레임 자동 입력: {end_frame_value}")
+        
+        except Exception as e:
+            self.logger.error(f"프레임 자동 입력 실패: {e}")
+            # 시그널 연결 복구
+            self.main_table.itemChanged.connect(self._on_table_item_changed)
     
     def _on_fps_changed(self, item):
         """FPS 값 변경 처리"""
@@ -501,22 +585,24 @@ class TableWindow(QMainWindow):
         try:
             segments_data = []
             
-            # 메인 테이블에서 데이터 행만 처리 (행 2부터)
-            for row in range(2, self.main_table.rowCount()):
-                segment_data = {}
+            # 메인 테이블에서 구간별 데이터 처리 (2행씩 그룹)
+            for row in range(2, self.main_table.rowCount(), 2):
+                time_row = row
+                vel_row = row + 1
                 
-                # 각 열에서 데이터 추출
-                segment_data['segment_num'] = self._get_cell_value(row, 0)
-                segment_data['frame_start'] = self._get_cell_value(row, 1)
-                segment_data['frame_end'] = self._get_cell_value(row, 2)
-                segment_data['distance'] = self._get_cell_value(row, 3)
-                segment_data['avg_time'] = self._get_cell_value(row, 4)
-                segment_data['avg_velocity'] = self._get_cell_value(row, 5)
-                segment_data['acc_time'] = self._get_cell_value(row, 6)
-                segment_data['acc_velocity'] = self._get_cell_value(row, 7)
-                segment_data['acceleration'] = self._get_cell_value(row, 8)
-                segment_data['duration'] = self._get_cell_value(row, 9)
-                segment_data['acc_dec_type'] = self._get_cell_value(row, 10)
+                # 각 구간의 데이터 추출
+                segment_data = {}
+                segment_data['segment_num'] = self._get_cell_value(time_row, 0)
+                segment_data['frame_start'] = self._get_cell_value(time_row, 1)
+                segment_data['frame_end'] = self._get_cell_value(time_row, 2)
+                segment_data['distance'] = self._get_cell_value(time_row, 3)
+                segment_data['avg_time'] = self._get_cell_value(time_row, 4)
+                segment_data['avg_velocity'] = self._get_cell_value(vel_row, 5) if vel_row < self.main_table.rowCount() else ""
+                segment_data['acc_time'] = self._get_cell_value(time_row, 6)
+                segment_data['acc_velocity'] = self._get_cell_value(vel_row, 7) if vel_row < self.main_table.rowCount() else ""
+                segment_data['acceleration'] = self._get_cell_value(time_row, 8)
+                segment_data['duration'] = self._get_cell_value(vel_row, 9) if vel_row < self.main_table.rowCount() else ""
+                segment_data['acc_dec_type'] = self._get_cell_value(vel_row, 10) if vel_row < self.main_table.rowCount() else ""
                 
                 segments_data.append(segment_data)
             
