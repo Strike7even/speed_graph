@@ -175,11 +175,47 @@ class GraphWindow(QMainWindow):
             times = [point['time'] for point in self.optimization_data]
             velocities = [point['velocity'] for point in self.optimization_data]
             
+            # 가속도에 따른 선분 색상 그리기
+            settings = self.data_bridge.get_settings() if self.data_bridge else {}
+            max_acc = settings.get('max_acceleration', DEFAULT_MAX_ACCELERATION)
+            max_dec = settings.get('max_deceleration', DEFAULT_MAX_DECELERATION)
+            
+            # 각 선분을 가속도에 따라 다른 색상으로 그리기
+            for i in range(len(self.optimization_data) - 1):
+                curr_point = self.optimization_data[i]
+                next_point = self.optimization_data[i + 1]
+                
+                time_diff = next_point['time'] - curr_point['time']
+                if time_diff > 0:
+                    # 가속도 계산 (km/h를 m/s로 변환)
+                    vel_diff_ms = (next_point['velocity'] - curr_point['velocity']) / 3.6
+                    acceleration = vel_diff_ms / time_diff
+                    
+                    # 가속도 범위에 따른 색상 결정
+                    if max_dec <= acceleration <= max_acc:
+                        color = ACCELERATION_VALID_COLOR
+                    else:
+                        color = ACCELERATION_INVALID_COLOR
+                else:
+                    color = OPTIMIZATION_VELOCITY_COLOR
+                
+                # 선분 그리기
+                self.ax.plot([curr_point['time'], next_point['time']], 
+                           [curr_point['velocity'], next_point['velocity']],
+                           color=color, linewidth=LINE_WIDTH)
+            
+            # 포인트 그리기
             self.ax.plot(times, velocities, 
                         color=OPTIMIZATION_VELOCITY_COLOR,
-                        label='Optimization Velocity',
                         marker='o', markersize=POINT_SIZE,
-                        linewidth=LINE_WIDTH, fillstyle='none')
+                        linewidth=0, fillstyle='none',
+                        label='Optimization Velocity')
+            
+            # 드래그 중인 포인트 강조
+            if self.dragging and self.selected_point_index is not None:
+                selected_point = self.optimization_data[self.selected_point_index]
+                self.ax.plot(selected_point['time'], selected_point['velocity'],
+                            'ro', markersize=POINT_SIZE * 1.5, zorder=10)
         
         if self.video_analysis_data:
             times = [point['time'] for point in self.video_analysis_data]
@@ -211,24 +247,70 @@ class GraphWindow(QMainWindow):
     
     def _on_mouse_press(self, event):
         """마우스 클릭 이벤트"""
-        if event.inaxes != self.ax:
+        if event.inaxes != self.ax or not self.graph_visible:
             return
         
-        # TODO: Phase 3에서 드래그 기능 구현
-        self.logger.debug(f"마우스 클릭: ({event.xdata:.2f}, {event.ydata:.2f})")
+        # 최적화 속도 데이터가 있는지 확인
+        if not self.optimization_data:
+            return
+        
+        # 클릭 위치에서 가장 가까운 포인트 찾기
+        click_x, click_y = event.xdata, event.ydata
+        min_distance = float('inf')
+        closest_index = None
+        
+        for i, point in enumerate(self.optimization_data):
+            # 거리 계산 (x축은 시간 단위, y축은 속도 단위로 정규화)
+            x_dist = (point['time'] - click_x) * 10  # 시간축 가중치
+            y_dist = (point['velocity'] - click_y)   # 속도축
+            distance = (x_dist**2 + y_dist**2)**0.5
+            
+            if distance < min_distance:
+                min_distance = distance
+                closest_index = i
+        
+        # 임계값 내에 있으면 드래그 시작
+        threshold = 5.0  # 클릭 감지 임계값
+        if min_distance < threshold and closest_index is not None:
+            self.dragging = True
+            self.selected_point_index = closest_index
+            self.logger.debug(f"포인트 {closest_index} 선택됨: {self.optimization_data[closest_index]}")
     
     def _on_mouse_release(self, event):
         """마우스 릴리즈 이벤트"""
         if self.dragging:
             self.dragging = False
+            
+            # 변경된 데이터를 Data Bridge로 전송
+            if self.data_bridge:
+                graph_data = {
+                    'optimization_velocity': self.optimization_data
+                }
+                self.data_bridge.update_from_graph(graph_data)
+                self.logger.debug("드래그 완료 - 데이터 업데이트 전송")
+            
             self.selected_point_index = None
-            # TODO: Phase 3에서 구현
     
     def _on_mouse_motion(self, event):
         """마우스 이동 이벤트"""
-        if self.dragging and event.inaxes == self.ax:
-            # TODO: Phase 3에서 드래그 구현
-            pass
+        if self.dragging and event.inaxes == self.ax and self.selected_point_index is not None:
+            # 새로운 Y 좌표 (속도값)으로 업데이트
+            new_velocity = max(0, event.ydata)  # 속도는 0 이상
+            
+            # 가속도 제한 검증
+            if self._validate_velocity_change(self.selected_point_index, new_velocity):
+                # 선택된 포인트의 속도 업데이트
+                self.optimization_data[self.selected_point_index]['velocity'] = new_velocity
+                
+                # 연결된 포인트들도 업데이트 (같은 시간대의 포인트)
+                current_time = self.optimization_data[self.selected_point_index]['time']
+                for i, point in enumerate(self.optimization_data):
+                    if abs(point['time'] - current_time) < 0.001 and i != self.selected_point_index:
+                        point['velocity'] = new_velocity
+                
+                # 그래프 실시간 업데이트
+                self._update_graph()
+                self.logger.debug(f"포인트 {self.selected_point_index} 속도 변경: {new_velocity:.2f} km/h")
     
     # === 버튼 이벤트 핸들러 ===
     
@@ -293,6 +375,48 @@ class GraphWindow(QMainWindow):
                 self._show_error_message("저장 오류", f"SVG 저장 중 오류: {e}")
     
     # === 유틸리티 메서드 ===
+    
+    def _validate_velocity_change(self, point_index, new_velocity):
+        """속도 변경 시 가속도 제한 검증"""
+        try:
+            # 인접 포인트들과의 가속도 계산
+            settings = self.data_bridge.get_settings() if self.data_bridge else {}
+            max_acc = settings.get('max_acceleration', DEFAULT_MAX_ACCELERATION)
+            max_dec = settings.get('max_deceleration', DEFAULT_MAX_DECELERATION)
+            
+            # 이전 포인트와의 가속도 검증
+            if point_index > 0:
+                prev_point = self.optimization_data[point_index - 1]
+                time_diff = self.optimization_data[point_index]['time'] - prev_point['time']
+                
+                if time_diff > 0:
+                    # km/h를 m/s로 변환하여 가속도 계산
+                    vel_diff_ms = (new_velocity - prev_point['velocity']) / 3.6
+                    acceleration = vel_diff_ms / time_diff
+                    
+                    if acceleration > max_acc or acceleration < max_dec:
+                        self.logger.debug(f"가속도 제한 초과: {acceleration:.2f} m/s²")
+                        return False
+            
+            # 다음 포인트와의 가속도 검증
+            if point_index < len(self.optimization_data) - 1:
+                next_point = self.optimization_data[point_index + 1]
+                time_diff = next_point['time'] - self.optimization_data[point_index]['time']
+                
+                if time_diff > 0:
+                    # km/h를 m/s로 변환하여 가속도 계산
+                    vel_diff_ms = (next_point['velocity'] - new_velocity) / 3.6
+                    acceleration = vel_diff_ms / time_diff
+                    
+                    if acceleration > max_acc or acceleration < max_dec:
+                        self.logger.debug(f"가속도 제한 초과: {acceleration:.2f} m/s²")
+                        return False
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"속도 검증 실패: {e}")
+            return True  # 에러 시 허용
     
     def _show_error_message(self, title, message):
         """에러 메시지 표시"""
