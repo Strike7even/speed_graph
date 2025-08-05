@@ -1,0 +1,44 @@
+# Python 캐시 파일
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+
+# 로그 파일
+*.log
+speed_graph.log
+
+# IDE 설정
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS 관련
+.DS_Store
+Thumbs.db
+
+# 프로젝트 임시 파일
+*.tmp
+*.bak
+~*
+
+# 빌드 관련
+build/
+dist/
+*.spec
+
+# 테스트 관련
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 가상환경
+venv/
+env/
+ENV/
+.venv/
+
+# 프로젝트 데이터 파일 (선택적)
+# *.json  # 프로젝트 저장 파일은 필요시 추가
