@@ -161,8 +161,14 @@ class TableWindow(QMainWindow):
         # 두 번째 구간 데이터 (2행 사용: Time행, Vel행)
         self._add_segment_data(4, 2)
     
-    def _add_segment_data(self, start_row, segment_num):
-        """구간 데이터 추가 (2행 사용: Time행, Vel행)"""
+    def _add_segment_data(self, start_row, segment_num, auto_fill_start_frame=None):
+        """구간 데이터 추가 (2행 사용: Time행, Vel행)
+        
+        Args:
+            start_row: 시작 행 번호
+            segment_num: 구간 번호
+            auto_fill_start_frame: 자동으로 채울 START 프레임 값 (이전 구간의 END 프레임)
+        """
         # 첫 번째 행 (Time 행)
         time_row = start_row
         # 두 번째 행 (Vel 행)
@@ -180,6 +186,9 @@ class TableWindow(QMainWindow):
                 # 구간 번호
                 if col == 0:
                     item.setText(str(segment_num))
+                # START 프레임 자동 입력
+                elif col == 1 and auto_fill_start_frame:
+                    item.setText(str(auto_fill_start_frame))
                 
                 # 색상 설정
                 if col in [1, 2, 8]:  # frame_start, frame_end, acceleration (사용자 입력)
@@ -195,20 +204,28 @@ class TableWindow(QMainWindow):
                 
             else:
                 # 병합하지 않는 열 (4, 5, 6, 7): 각 행에 개별 값 설정
-                # Time 행
+                # Time 행 (짝수행)
                 time_item = QTableWidgetItem("")
                 time_item.setTextAlignment(Qt.AlignCenter)
                 
-                if col in [4, 6]:  # avg_time, acc_time (자동 계산)
+                # 4열, 5열: 짝수행(Time)은 색상 없음
+                # 6열: 모든 행 색상 없음
+                # 7열: 모든 행 색상 적용
+                if col == 7:  # acc_velocity
                     time_item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
                 
                 self.main_table.setItem(time_row, col, time_item)
                 
-                # Vel 행
+                # Vel 행 (홀수행)
                 vel_item = QTableWidgetItem("")
                 vel_item.setTextAlignment(Qt.AlignCenter)
                 
-                if col in [5, 7]:  # avg_velocity, acc_velocity (자동 계산)
+                # 4열, 5열: 홀수행(Vel)은 색상 적용
+                # 6열: 모든 행 색상 없음
+                # 7열: 모든 행 색상 적용
+                if col in [4, 5]:  # avg_time, avg_velocity (홀수행만 색상)
+                    vel_item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
+                elif col == 7:  # acc_velocity (모든 행 색상)
                     vel_item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
                 
                 self.main_table.setItem(vel_row, col, vel_item)
@@ -323,12 +340,20 @@ class TableWindow(QMainWindow):
             current_rows = self.main_table.rowCount()
             segment_num = (current_rows - 2) // 2 + 1  # 헤더 2행 제외, 2행씩 그룹
             
+            # 이전 구간의 END 프레임 값 가져오기
+            auto_fill_start = None
+            if current_rows > 2:  # 이전 구간이 존재하는 경우
+                prev_time_row = current_rows - 2  # 이전 구간의 Time 행
+                end_frame_item = self.main_table.item(prev_time_row, 2)  # END 프레임 (2번 열)
+                if end_frame_item and end_frame_item.text().strip():
+                    auto_fill_start = end_frame_item.text().strip()
+            
             # 새 구간을 위한 2행 추가
             self.main_table.insertRow(current_rows)
             self.main_table.insertRow(current_rows + 1)
             
-            # 새 구간 데이터 설정 (2행 사용)
-            self._add_segment_data(current_rows, segment_num)
+            # 새 구간 데이터 설정 (2행 사용, START 프레임 자동 입력)
+            self._add_segment_data(current_rows, segment_num, auto_fill_start)
             
             # 행 높이 설정
             self.main_table.setRowHeight(current_rows, 30)
@@ -339,7 +364,7 @@ class TableWindow(QMainWindow):
                 project_data = self.data_bridge.get_project_data()
                 new_segment = {
                     'segment_num': segment_num,
-                    'frame_start': '',
+                    'frame_start': auto_fill_start if auto_fill_start else '',
                     'frame_end': '',
                     'distance': '',
                     'avg_time': 0.0,
@@ -515,6 +540,9 @@ class TableWindow(QMainWindow):
                 if col == 2:  # frame_end 변경
                     self._auto_fill_next_segment_start(row, item.text())
                 
+                # 자동 계산 실행
+                self._check_and_calculate_auto_values()
+                
                 # 실시간으로 Data Bridge에 업데이트
                 self._collect_and_send_table_data()
         
@@ -555,6 +583,9 @@ class TableWindow(QMainWindow):
             if item.row() == 0 and item.column() == 1:
                 self.logger.debug(f"FPS 값 변경: {item.text()}")
                 
+                # 자동 계산 실행
+                self._check_and_calculate_auto_values()
+                
                 # 실시간으로 Data Bridge에 업데이트
                 self._collect_and_send_table_data()
         
@@ -578,6 +609,236 @@ class TableWindow(QMainWindow):
         except Exception as e:
             self.logger.error(f"데이터 업데이트 처리 실패: {e}")
             self._show_error_message("데이터 업데이트 오류", f"테이블 업데이트 중 오류가 발생했습니다: {e}")
+    
+    # === 자동 계산 메서드 ===
+    
+    def _calculate_time_values(self):
+        """4열 시간 값 자동 계산"""
+        try:
+            fps_value = self._get_cell_value_from_table(self.fps_table, 0, 1)
+            if not fps_value:
+                return
+            
+            fps = float(fps_value)
+            
+            # 각 구간별로 계산 (2행씩 그룹)
+            for row in range(2, self.main_table.rowCount(), 2):
+                segment_index = (row - 2) // 2
+                time_row = row
+                vel_row = row + 1
+                
+                # 프레임 정보 가져오기
+                start_frame = self._get_cell_value(time_row, 1)
+                end_frame = self._get_cell_value(time_row, 2)
+                
+                if start_frame and end_frame:
+                    try:
+                        start_f = float(start_frame)
+                        end_f = float(end_frame)
+                        
+                        # 구간 시간 계산 (프레임 차이 / FPS)
+                        segment_time = (end_f - start_f) / fps
+                        
+                        # 짝수행 (Time 행): 이전 구간 홀수행 시간 가져오기
+                        if segment_index == 0:
+                            # 1구간 첫 번째 행은 항상 0.000
+                            time_cumulative = 0.000
+                        else:
+                            # 이전 구간의 홀수행 시간 가져오기
+                            prev_vel_row = row - 1
+                            prev_time_str = self._get_cell_value(prev_vel_row, 4)
+                            time_cumulative = float(prev_time_str) if prev_time_str else 0.0
+                        
+                        # 홀수행 (Vel 행): 짝수행 시간 + 구간 시간
+                        time_end = time_cumulative + segment_time
+                        
+                        # 값 설정 (소수점 셋째자리까지)
+                        time_item = self.main_table.item(time_row, 4)
+                        if time_item:
+                            time_item.setText(f"{time_cumulative:.3f}")
+                        
+                        vel_time_item = self.main_table.item(vel_row, 4)
+                        if vel_time_item:
+                            vel_time_item.setText(f"{time_end:.3f}")
+                        
+                    except ValueError:
+                        pass  # 잘못된 프레임 값은 무시
+            
+        except Exception as e:
+            self.logger.error(f"시간 계산 실패: {e}")
+    
+    def _calculate_velocity_values(self):
+        """5열 속도 값 자동 계산"""
+        try:
+            fps_value = self._get_cell_value_from_table(self.fps_table, 0, 1)
+            if not fps_value:
+                return
+            
+            fps = float(fps_value)
+            
+            # 각 구간별로 계산 (2행씩 그룹)
+            for row in range(2, self.main_table.rowCount(), 2):
+                time_row = row
+                vel_row = row + 1
+                
+                # 프레임 정보와 거리 정보 가져오기
+                start_frame = self._get_cell_value(time_row, 1)
+                end_frame = self._get_cell_value(time_row, 2)
+                distance = self._get_cell_value(time_row, 3)
+                
+                if start_frame and end_frame and distance:
+                    try:
+                        start_f = float(start_frame)
+                        end_f = float(end_frame)
+                        dist = float(distance)
+                        
+                        # 구간 시간 계산
+                        segment_time = (end_f - start_f) / fps
+                        
+                        if segment_time > 0:
+                            # 속도 계산 (거리 / 시간)
+                            velocity = dist / segment_time
+                            
+                            # 짝수행 (Time 행): 공란
+                            time_vel_item = self.main_table.item(time_row, 5)
+                            if time_vel_item:
+                                time_vel_item.setText("")
+                            
+                            # 홀수행 (Vel 행): 계산된 속도 (소수점 첫째자리까지)
+                            vel_vel_item = self.main_table.item(vel_row, 5)
+                            if vel_vel_item:
+                                vel_vel_item.setText(f"{velocity:.1f}")
+                        
+                    except (ValueError, ZeroDivisionError):
+                        pass  # 잘못된 값은 무시
+            
+        except Exception as e:
+            self.logger.error(f"속도 계산 실패: {e}")
+    
+    def _calculate_segment_time_values(self, start_row):
+        """특정 구간의 4열 시간 값 계산"""
+        try:
+            fps_value = self._get_cell_value_from_table(self.fps_table, 0, 1)
+            if not fps_value:
+                return
+            
+            fps = float(fps_value)
+            segment_index = (start_row - 2) // 2
+            time_row = start_row
+            vel_row = start_row + 1
+            
+            # 프레임 정보 가져오기
+            start_frame = self._get_cell_value(time_row, 1)
+            end_frame = self._get_cell_value(time_row, 2)
+            
+            if start_frame and end_frame:
+                try:
+                    start_f = float(start_frame)
+                    end_f = float(end_frame)
+                    
+                    # 구간 시간 계산
+                    frame_count = end_f - start_f  # 프레임수
+                    time_per_frame = 1 / fps  # 1프레임당 시간
+                    segment_time = frame_count * time_per_frame  # 구간시간
+                    
+                    # 짝수행 (Time 행): 이전 구간 홀수행 시간 가져오기
+                    if segment_index == 0:
+                        # 1구간 첫 번째 행은 항상 0.000
+                        time_cumulative = 0.000
+                    else:
+                        # 이전 구간의 홀수행 시간 가져오기
+                        prev_vel_row = start_row - 1
+                        prev_time_str = self._get_cell_value(prev_vel_row, 4)
+                        time_cumulative = float(prev_time_str) if prev_time_str else 0.0
+                    
+                    # 홀수행 (Vel 행): 짝수행 시간 + 구간 시간
+                    time_end = time_cumulative + segment_time
+                    
+                    # 값 설정 (소수점 셋째자리까지)
+                    time_item = self.main_table.item(time_row, 4)
+                    if time_item:
+                        time_item.setText(f"{time_cumulative:.3f}")
+                    
+                    vel_time_item = self.main_table.item(vel_row, 4)
+                    if vel_time_item:
+                        vel_time_item.setText(f"{time_end:.3f}")
+                    
+                except ValueError:
+                    pass  # 잘못된 프레임 값은 무시
+            
+        except Exception as e:
+            self.logger.error(f"구간 시간 계산 실패: {e}")
+    
+    def _calculate_segment_velocity_values(self, start_row):
+        """특정 구간의 5열 속도 값 계산"""
+        try:
+            fps_value = self._get_cell_value_from_table(self.fps_table, 0, 1)
+            if not fps_value:
+                return
+            
+            fps = float(fps_value)
+            time_row = start_row
+            vel_row = start_row + 1
+            
+            # 프레임 정보와 거리 정보 가져오기
+            start_frame = self._get_cell_value(time_row, 1)
+            end_frame = self._get_cell_value(time_row, 2)
+            distance = self._get_cell_value(time_row, 3)
+            
+            if start_frame and end_frame and distance:
+                try:
+                    start_f = float(start_frame)
+                    end_f = float(end_frame)
+                    dist = float(distance)
+                    
+                    # 구간 시간 계산
+                    segment_time = (end_f - start_f) / fps
+                    
+                    if segment_time > 0:
+                        # 속도 계산 (거리 / 시간)
+                        velocity = dist / segment_time
+                        
+                        # 짝수행 (Time 행): 공란
+                        time_vel_item = self.main_table.item(time_row, 5)
+                        if time_vel_item:
+                            time_vel_item.setText("")
+                        
+                        # 홀수행 (Vel 행): 계산된 속도 (소수점 첫째자리까지)
+                        vel_vel_item = self.main_table.item(vel_row, 5)
+                        if vel_vel_item:
+                            vel_vel_item.setText(f"{velocity:.1f}")
+                    
+                except (ValueError, ZeroDivisionError):
+                    pass  # 잘못된 값은 무시
+            
+        except Exception as e:
+            self.logger.error(f"구간 속도 계산 실패: {e}")
+    
+    def _check_and_calculate_auto_values(self):
+        """사용자 입력 데이터가 완성된 구간별로 자동 계산 실행"""
+        try:
+            # FPS 값 확인
+            fps_value = self._get_cell_value_from_table(self.fps_table, 0, 1)
+            if not fps_value:
+                return
+            
+            # 각 구간별로 개별 계산
+            for row in range(2, self.main_table.rowCount(), 2):
+                time_row = row
+                
+                # 해당 구간의 필수 입력 값들 확인 (START, END, 거리)
+                start_frame = self._get_cell_value(time_row, 1)
+                end_frame = self._get_cell_value(time_row, 2)
+                distance = self._get_cell_value(time_row, 3)
+                
+                # 해당 구간의 조건이 충족되면 계산 실행
+                if start_frame and end_frame and distance:
+                    self._calculate_segment_time_values(row)
+                    self._calculate_segment_velocity_values(row)
+                    self.logger.debug(f"구간 {(row-2)//2 + 1} 자동 계산 완료")
+            
+        except Exception as e:
+            self.logger.error(f"자동 계산 확인 실패: {e}")
     
     # === 데이터 수집 및 새로고침 메서드 ===
     
@@ -702,7 +963,7 @@ class TableWindow(QMainWindow):
                         
                     else:
                         # 병합하지 않는 열 (4, 5, 6, 7): 각 행에 개별 값 설정
-                        # Time 행
+                        # Time 행 (짝수행)
                         time_value = ""
                         if col == 4:
                             time_value = str(segment.get('avg_time', ''))
@@ -711,11 +972,17 @@ class TableWindow(QMainWindow):
                         
                         time_item = QTableWidgetItem(time_value)
                         time_item.setTextAlignment(Qt.AlignCenter)
-                        if col in [4, 6]:  # 자동 계산
+                        
+                        # 색상 규칙 적용
+                        # 4열, 5열: 짝수행(Time)은 색상 없음
+                        # 6열: 모든 행 색상 없음
+                        # 7열: 모든 행 색상 적용
+                        if col == 7:  # acc_velocity는 모든 행 색상
                             time_item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
+                        
                         self.main_table.setItem(time_row, col, time_item)
                         
-                        # Vel 행
+                        # Vel 행 (홀수행)
                         vel_value = ""
                         if col == 5:
                             vel_value = str(segment.get('avg_velocity', ''))
@@ -724,8 +991,16 @@ class TableWindow(QMainWindow):
                         
                         vel_item = QTableWidgetItem(vel_value)
                         vel_item.setTextAlignment(Qt.AlignCenter)
-                        if col in [5, 7]:  # 자동 계산
+                        
+                        # 색상 규칙 적용
+                        # 4열, 5열: 홀수행(Vel)은 색상 적용
+                        # 6열: 모든 행 색상 없음
+                        # 7열: 모든 행 색상 적용
+                        if col in [4, 5]:  # avg_time, avg_velocity (홀수행만 색상)
                             vel_item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
+                        elif col == 7:  # acc_velocity (모든 행 색상)
+                            vel_item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
+                        
                         self.main_table.setItem(vel_row, col, vel_item)
                 
                 # 행 높이 설정
