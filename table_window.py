@@ -143,9 +143,6 @@ class TableWindow(QMainWindow):
             item.setTextAlignment(Qt.AlignCenter)
             self.main_table.setItem(1, col, item)
         
-        # 셀 병합 (추후 구현)
-        # TODO: Phase 2에서 상세 구현
-        
         # 열 너비 설정
         for col in range(11):
             self.main_table.setColumnWidth(col, 100)
@@ -171,46 +168,50 @@ class TableWindow(QMainWindow):
         # 두 번째 행 (Vel 행)
         vel_row = start_row + 1
         
-        # 구간 번호 (2행에 걸쳐 병합, 현재는 첫 번째 행에만 표시)
-        segment_item = QTableWidgetItem(str(segment_num))
-        segment_item.setTextAlignment(Qt.AlignCenter)
-        self.main_table.setItem(time_row, 0, segment_item)
+        # 병합 대상 열 (0, 1, 2, 3, 8, 9, 10)
+        merge_columns = [0, 1, 2, 3, 8, 9, 10]
         
-        # 빈 셀로 두 번째 행 구간 번호 셀
-        empty_item = QTableWidgetItem("")
-        self.main_table.setItem(vel_row, 0, empty_item)
-        
-        # Time 행 설정
-        for col in range(1, 11):
-            item = QTableWidgetItem("")
-            item.setTextAlignment(Qt.AlignCenter)
-            
-            # Time 행의 색상 설정
-            if col in [1, 2, 8]:  # frame_start, frame_end, acceleration (사용자 입력)
-                item.setBackground(QBrush(QColor(USER_INPUT_COLOR)))
-            elif col in [3]:  # distance (PC-Crash 연동)
-                item.setBackground(QBrush(QColor(PC_CRASH_INTEGRATION_COLOR)))
-            elif col in [4, 6]:  # avg_time, acc_time (자동 계산)
-                item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
-            else:  # 나머지 (빈 셀)
-                pass
-            
-            self.main_table.setItem(time_row, col, item)
-        
-        # Vel 행 설정
-        for col in range(1, 11):
-            item = QTableWidgetItem("")
-            item.setTextAlignment(Qt.AlignCenter)
-            
-            # Vel 행의 색상 설정
-            if col in [5, 7]:  # avg_velocity, acc_velocity (자동 계산)
-                item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
-            elif col in [9, 10]:  # duration, acc_dec_type (자동 계산)
-                item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
-            else:  # 나머지 (빈 셀)
-                pass
-            
-            self.main_table.setItem(vel_row, col, item)
+        for col in range(11):
+            if col in merge_columns:
+                # 병합 대상 열: Time 행에만 값 설정하고 rowspan=2 적용
+                item = QTableWidgetItem("")
+                item.setTextAlignment(Qt.AlignCenter)
+                
+                # 구간 번호
+                if col == 0:
+                    item.setText(str(segment_num))
+                
+                # 색상 설정
+                if col in [1, 2, 8]:  # frame_start, frame_end, acceleration (사용자 입력)
+                    item.setBackground(QBrush(QColor(USER_INPUT_COLOR)))
+                elif col == 3:  # distance (PC-Crash 연동)
+                    item.setBackground(QBrush(QColor(PC_CRASH_INTEGRATION_COLOR)))
+                elif col in [9, 10]:  # duration, acc_dec_type (자동 계산)
+                    item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
+                
+                self.main_table.setItem(time_row, col, item)
+                # setSpan으로 셀 병합 (row, col, rowspan, colspan)
+                self.main_table.setSpan(time_row, col, 2, 1)
+                
+            else:
+                # 병합하지 않는 열 (4, 5, 6, 7): 각 행에 개별 값 설정
+                # Time 행
+                time_item = QTableWidgetItem("")
+                time_item.setTextAlignment(Qt.AlignCenter)
+                
+                if col in [4, 6]:  # avg_time, acc_time (자동 계산)
+                    time_item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
+                
+                self.main_table.setItem(time_row, col, time_item)
+                
+                # Vel 행
+                vel_item = QTableWidgetItem("")
+                vel_item.setTextAlignment(Qt.AlignCenter)
+                
+                if col in [5, 7]:  # avg_velocity, acc_velocity (자동 계산)
+                    vel_item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
+                
+                self.main_table.setItem(vel_row, col, vel_item)
     
     def _add_segment_row(self, row, segment_num):
         """기존 메서드 유지 (호환성)"""
@@ -592,17 +593,21 @@ class TableWindow(QMainWindow):
                 
                 # 각 구간의 데이터 추출
                 segment_data = {}
+                
+                # 병합된 셀 (0, 1, 2, 3, 8, 9, 10): Time 행에서만 값 가져오기
                 segment_data['segment_num'] = self._get_cell_value(time_row, 0)
                 segment_data['frame_start'] = self._get_cell_value(time_row, 1)
                 segment_data['frame_end'] = self._get_cell_value(time_row, 2)
                 segment_data['distance'] = self._get_cell_value(time_row, 3)
+                segment_data['acceleration'] = self._get_cell_value(time_row, 8)
+                segment_data['duration'] = self._get_cell_value(time_row, 9)
+                segment_data['acc_dec_type'] = self._get_cell_value(time_row, 10)
+                
+                # 병합되지 않은 셀 (4, 5, 6, 7): 각 행에서 값 가져오기
                 segment_data['avg_time'] = self._get_cell_value(time_row, 4)
                 segment_data['avg_velocity'] = self._get_cell_value(vel_row, 5) if vel_row < self.main_table.rowCount() else ""
                 segment_data['acc_time'] = self._get_cell_value(time_row, 6)
                 segment_data['acc_velocity'] = self._get_cell_value(vel_row, 7) if vel_row < self.main_table.rowCount() else ""
-                segment_data['acceleration'] = self._get_cell_value(time_row, 8)
-                segment_data['duration'] = self._get_cell_value(vel_row, 9) if vel_row < self.main_table.rowCount() else ""
-                segment_data['acc_dec_type'] = self._get_cell_value(vel_row, 10) if vel_row < self.main_table.rowCount() else ""
                 
                 segments_data.append(segment_data)
             
@@ -647,26 +652,85 @@ class TableWindow(QMainWindow):
             while self.main_table.rowCount() > 2:
                 self.main_table.removeRow(2)
             
-            # 세그먼트 데이터 행 추가
+            # 세그먼트 데이터 행 추가 (각 세그먼트당 2행)
             for i, segment in enumerate(segments):
-                row = i + 2  # 헤더 다음부터
-                self.main_table.insertRow(row)
+                start_row = 2 + (i * 2)  # 헤더 다음부터, 각 세그먼트당 2행
                 
-                # 각 셀에 데이터 설정
-                self._set_cell_value(row, 0, str(segment.get('segment_num', i + 1)))
-                self._set_cell_value(row, 1, str(segment.get('frame_start', '')))
-                self._set_cell_value(row, 2, str(segment.get('frame_end', '')))
-                self._set_cell_value(row, 3, str(segment.get('distance', '')))
-                self._set_cell_value(row, 4, str(segment.get('avg_time', '')))
-                self._set_cell_value(row, 5, str(segment.get('avg_velocity', '')))
-                self._set_cell_value(row, 6, str(segment.get('acc_time', '')))
-                self._set_cell_value(row, 7, str(segment.get('acc_velocity', '')))
-                self._set_cell_value(row, 8, str(segment.get('acceleration', '')))
-                self._set_cell_value(row, 9, str(segment.get('duration', '')))
-                self._set_cell_value(row, 10, str(segment.get('acc_dec_type', '')))
+                # 2행 추가 (Time 행, Vel 행)
+                self.main_table.insertRow(start_row)
+                self.main_table.insertRow(start_row + 1)
+                
+                time_row = start_row
+                vel_row = start_row + 1
+                
+                # 병합 대상 열 (0, 1, 2, 3, 8, 9, 10)
+                merge_columns = [0, 1, 2, 3, 8, 9, 10]
+                
+                for col in range(11):
+                    if col in merge_columns:
+                        # 병합 대상 열: Time 행에만 값 설정하고 rowspan=2 적용
+                        value = ""
+                        if col == 0:
+                            value = str(segment.get('segment_num', i + 1))
+                        elif col == 1:
+                            value = str(segment.get('frame_start', ''))
+                        elif col == 2:
+                            value = str(segment.get('frame_end', ''))
+                        elif col == 3:
+                            value = str(segment.get('distance', ''))
+                        elif col == 8:
+                            value = str(segment.get('acceleration', ''))
+                        elif col == 9:
+                            value = str(segment.get('duration', ''))
+                        elif col == 10:
+                            value = str(segment.get('acc_dec_type', ''))
+                        
+                        item = QTableWidgetItem(value)
+                        item.setTextAlignment(Qt.AlignCenter)
+                        
+                        # 색상 설정
+                        if col in [1, 2, 8]:  # 사용자 입력
+                            item.setBackground(QBrush(QColor(USER_INPUT_COLOR)))
+                        elif col == 3:  # PC-Crash 연동
+                            item.setBackground(QBrush(QColor(PC_CRASH_INTEGRATION_COLOR)))
+                        elif col in [9, 10]:  # 자동 계산
+                            item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
+                        
+                        self.main_table.setItem(time_row, col, item)
+                        # setSpan으로 셀 병합 (row, col, rowspan, colspan)
+                        self.main_table.setSpan(time_row, col, 2, 1)
+                        
+                    else:
+                        # 병합하지 않는 열 (4, 5, 6, 7): 각 행에 개별 값 설정
+                        # Time 행
+                        time_value = ""
+                        if col == 4:
+                            time_value = str(segment.get('avg_time', ''))
+                        elif col == 6:
+                            time_value = str(segment.get('acc_time', ''))
+                        
+                        time_item = QTableWidgetItem(time_value)
+                        time_item.setTextAlignment(Qt.AlignCenter)
+                        if col in [4, 6]:  # 자동 계산
+                            time_item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
+                        self.main_table.setItem(time_row, col, time_item)
+                        
+                        # Vel 행
+                        vel_value = ""
+                        if col == 5:
+                            vel_value = str(segment.get('avg_velocity', ''))
+                        elif col == 7:
+                            vel_value = str(segment.get('acc_velocity', ''))
+                        
+                        vel_item = QTableWidgetItem(vel_value)
+                        vel_item.setTextAlignment(Qt.AlignCenter)
+                        if col in [5, 7]:  # 자동 계산
+                            vel_item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
+                        self.main_table.setItem(vel_row, col, vel_item)
                 
                 # 행 높이 설정
-                self.main_table.setRowHeight(row, 30)
+                self.main_table.setRowHeight(time_row, 30)
+                self.main_table.setRowHeight(vel_row, 30)
             
             # FPS 값 설정
             fps_value = settings.get('fps', 30.0)
