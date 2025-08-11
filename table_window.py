@@ -6,7 +6,7 @@ TableWindow - 테이블 윈도우
 import logging
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, 
-    QTableWidgetItem, QPushButton, QLabel, QMessageBox
+    QTableWidgetItem, QPushButton, QLabel, QMessageBox, QApplication
 )
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QColor, QBrush
@@ -175,17 +175,17 @@ class TableWindow(QMainWindow):
             segment_num: 구간 번호
             auto_fill_start_frame: 자동으로 채울 START 프레임 값 (이전 구간의 END 프레임)
         """
-        # 첫 번째 행 (Time 행)
-        time_row = start_row
-        # 두 번째 행 (Vel 행)
-        vel_row = start_row + 1
+        # 구간 시작 상태 행 (병합된 셀들이 위치하는 행)
+        segment_start_row = start_row
+        # 구간 끝 상태 행 (분리된 셀들의 끝 데이터가 위치하는 행)
+        segment_end_row = start_row + 1
         
         # 병합 대상 열 (0, 1, 2, 3, 4, 5, 8, 9, 10) - Time과 Vel도 병합 추가
         merge_columns = [0, 1, 2, 3, 4, 5, 8, 9, 10]
         
         for col in range(11):
             if col in merge_columns:
-                # 병합 대상 열: Time 행에만 값 설정하고 rowspan=2 적용
+                # 병합 대상 열: 구간 시작 행에만 값 설정하고 rowspan=2 적용
                 item = QTableWidgetItem("")
                 item.setTextAlignment(Qt.AlignCenter)
                 
@@ -204,37 +204,33 @@ class TableWindow(QMainWindow):
                 elif col in [4, 5, 9, 10]:  # time, velocity, duration, acc_dec_type (자동 계산)
                     item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
                 
-                self.main_table.setItem(time_row, col, item)
+                self.main_table.setItem(segment_start_row, col, item)
                 # setSpan으로 셀 병합 (row, col, rowspan, colspan)
-                self.main_table.setSpan(time_row, col, 2, 1)
+                self.main_table.setSpan(segment_start_row, col, 2, 1)
                 
             else:
-                # 병합하지 않는 열 (4, 5, 6, 7): 각 행에 개별 값 설정
-                # Time 행 (짝수행)
-                time_item = QTableWidgetItem("")
-                time_item.setTextAlignment(Qt.AlignCenter)
+                # 병합하지 않는 열 (6, 7): 각 행에 개별 값 설정
+                # 구간 시작 행 (시작 상태 데이터)
+                start_item = QTableWidgetItem("")
+                start_item.setTextAlignment(Qt.AlignCenter)
                 
-                # 4열, 5열: 짝수행(Time)은 색상 없음
                 # 6열: 모든 행 색상 없음
                 # 7열: 모든 행 색상 적용
                 if col == 7:  # acc_velocity
-                    time_item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
+                    start_item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
                 
-                self.main_table.setItem(time_row, col, time_item)
+                self.main_table.setItem(segment_start_row, col, start_item)
                 
-                # Vel 행 (홀수행)
-                vel_item = QTableWidgetItem("")
-                vel_item.setTextAlignment(Qt.AlignCenter)
+                # 구간 끝 행 (끝 상태 데이터)
+                end_item = QTableWidgetItem("")
+                end_item.setTextAlignment(Qt.AlignCenter)
                 
-                # 4열, 5열: 홀수행(Vel)은 색상 적용
                 # 6열: 모든 행 색상 없음
                 # 7열: 모든 행 색상 적용
-                if col in [4, 5]:  # avg_time, avg_velocity (홀수행만 색상)
-                    vel_item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
-                elif col == 7:  # acc_velocity (모든 행 색상)
-                    vel_item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
+                if col == 7:  # acc_velocity (끝 상태에서 중요한 값)
+                    end_item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
                 
-                self.main_table.setItem(vel_row, col, vel_item)
+                self.main_table.setItem(segment_end_row, col, end_item)
     
     def _add_segment_row(self, row, segment_num):
         """기존 메서드 유지 (호환성)"""
@@ -353,8 +349,8 @@ class TableWindow(QMainWindow):
             # 이전 구간의 END 프레임 값 가져오기
             auto_fill_start = None
             if current_rows > 2:  # 이전 구간이 존재하는 경우
-                prev_time_row = current_rows - 2  # 이전 구간의 Time 행
-                end_frame_item = self.main_table.item(prev_time_row, 2)  # END 프레임 (2번 열)
+                prev_segment_start_row = current_rows - 2  # 이전 구간의 시작 행
+                end_frame_item = self.main_table.item(prev_segment_start_row, 2)  # END 프레임 (2번 열)
                 if end_frame_item and end_frame_item.text().strip():
                     auto_fill_start = end_frame_item.text().strip()
             
@@ -568,12 +564,12 @@ class TableWindow(QMainWindow):
             # 현재 구간이 어느 구간인지 파악 (2행씩 그룹)
             # 구간1: 행 2,3 / 구간2: 행 4,5 / 구간3: 행 6,7 ...
             current_segment = (current_row - 2) // 2 + 1
-            next_segment_time_row = current_row + 2  # 다음 구간의 Time 행
+            next_segment_start_row = current_row + 2  # 다음 구간의 시작 행
             
             # 다음 구간이 존재하는지 확인
-            if next_segment_time_row < self.main_table.rowCount():
+            if next_segment_start_row < self.main_table.rowCount():
                 # 다음 구간의 START 프레임 (col 1) 자동 입력
-                next_start_item = self.main_table.item(next_segment_time_row, 1)
+                next_start_item = self.main_table.item(next_segment_start_row, 1)
                 if next_start_item:
                     # 시그널 연결을 일시적으로 해제하여 무한 루프 방지
                     self.main_table.itemChanged.disconnect(self._on_table_item_changed)
@@ -634,11 +630,11 @@ class TableWindow(QMainWindow):
             # 각 구간별로 계산 (2행씩 그룹)
             for row in range(2, self.main_table.rowCount(), 2):
                 segment_index = (row - 2) // 2
-                time_row = row
+                segment_start_row = row  # 구간 시작 행
                 
-                # 프레임 정보 가져오기
-                start_frame = self._get_cell_value(time_row, 1)
-                end_frame = self._get_cell_value(time_row, 2)
+                # 프레임 정보 가져오기 (병합된 셀에서)
+                start_frame = self._get_cell_value(segment_start_row, 1)
+                end_frame = self._get_cell_value(segment_start_row, 2)
                 
                 if start_frame and end_frame:
                     try:
@@ -654,8 +650,8 @@ class TableWindow(QMainWindow):
                             time_cumulative = 0.000
                         else:
                             # 이전 구간의 종료 시간 가져오기
-                            prev_time_row = row - 2
-                            prev_time_str = self._get_cell_value(prev_time_row, 4)
+                            prev_segment_start_row = row - 2
+                            prev_time_str = self._get_cell_value(prev_segment_start_row, 4)
                             if prev_time_str:
                                 # 이전 구간의 종료 시간을 파싱
                                 time_cumulative = float(prev_time_str)
@@ -666,7 +662,7 @@ class TableWindow(QMainWindow):
                         time_end = time_cumulative + segment_time
                         
                         # 병합된 셀에 구간 종료 시간 설정 (소수점 셋째자리까지)
-                        time_item = self.main_table.item(time_row, 4)
+                        time_item = self.main_table.item(segment_start_row, 4)
                         if time_item:
                             time_item.setText(f"{time_end:.3f}")
                         
@@ -687,12 +683,12 @@ class TableWindow(QMainWindow):
             
             # 각 구간별로 계산 (2행씩 그룹)
             for row in range(2, self.main_table.rowCount(), 2):
-                time_row = row
+                segment_start_row = row  # 구간 시작 행
                 
-                # 프레임 정보와 거리 정보 가져오기
-                start_frame = self._get_cell_value(time_row, 1)
-                end_frame = self._get_cell_value(time_row, 2)
-                distance = self._get_cell_value(time_row, 3)
+                # 프레임 정보와 거리 정보 가져오기 (병합된 셀에서)
+                start_frame = self._get_cell_value(segment_start_row, 1)
+                end_frame = self._get_cell_value(segment_start_row, 2)
+                distance = self._get_cell_value(segment_start_row, 3)
                 
                 if start_frame and end_frame and distance:
                     try:
@@ -711,7 +707,7 @@ class TableWindow(QMainWindow):
                             velocity_kmh = velocity_ms * 3.6
                             
                             # 병합된 셀에 속도 설정 (소수점 둘째자리까지)
-                            vel_item = self.main_table.item(time_row, 5)
+                            vel_item = self.main_table.item(segment_start_row, 5)
                             if vel_item:
                                 vel_item.setText(f"{velocity_kmh:.2f}")
                         
@@ -730,11 +726,11 @@ class TableWindow(QMainWindow):
             
             fps = float(fps_value)
             segment_index = (start_row - 2) // 2
-            time_row = start_row
+            segment_start_row = start_row  # 구간 시작 행
             
-            # 프레임 정보 가져오기
-            start_frame = self._get_cell_value(time_row, 1)
-            end_frame = self._get_cell_value(time_row, 2)
+            # 프레임 정보 가져오기 (병합된 셀에서)
+            start_frame = self._get_cell_value(segment_start_row, 1)
+            end_frame = self._get_cell_value(segment_start_row, 2)
             
             if start_frame and end_frame:
                 try:
@@ -750,15 +746,15 @@ class TableWindow(QMainWindow):
                         time_cumulative = 0.000
                     else:
                         # 이전 구간의 종료 시간 가져오기
-                        prev_time_row = start_row - 2
-                        prev_time_str = self._get_cell_value(prev_time_row, 4)
+                        prev_segment_start_row = start_row - 2
+                        prev_time_str = self._get_cell_value(prev_segment_start_row, 4)
                         time_cumulative = float(prev_time_str) if prev_time_str else 0.0
                     
                     # 구간 종료 시간 계산
                     time_end = time_cumulative + segment_time
                     
                     # 병합된 셀에 구간 종료 시간 설정 (소수점 셋째자리까지)
-                    time_item = self.main_table.item(time_row, 4)
+                    time_item = self.main_table.item(segment_start_row, 4)
                     if time_item:
                         time_item.setText(f"{time_end:.3f}")
                     
@@ -776,12 +772,12 @@ class TableWindow(QMainWindow):
                 return
             
             fps = float(fps_value)
-            time_row = start_row
+            segment_start_row = start_row  # 구간 시작 행
             
-            # 프레임 정보와 거리 정보 가져오기
-            start_frame = self._get_cell_value(time_row, 1)
-            end_frame = self._get_cell_value(time_row, 2)
-            distance = self._get_cell_value(time_row, 3)
+            # 프레임 정보와 거리 정보 가져오기 (병합된 셀에서)
+            start_frame = self._get_cell_value(segment_start_row, 1)
+            end_frame = self._get_cell_value(segment_start_row, 2)
+            distance = self._get_cell_value(segment_start_row, 3)
             
             if start_frame and end_frame and distance:
                 try:
@@ -800,7 +796,7 @@ class TableWindow(QMainWindow):
                         velocity_kmh = velocity_ms * 3.6
                         
                         # 병합된 셀에 속도 설정 (소수점 둘째자리까지)
-                        vel_item = self.main_table.item(time_row, 5)
+                        vel_item = self.main_table.item(segment_start_row, 5)
                         if vel_item:
                             vel_item.setText(f"{velocity_kmh:.2f}")
                     
@@ -820,12 +816,12 @@ class TableWindow(QMainWindow):
             
             # 각 구간별로 개별 계산
             for row in range(2, self.main_table.rowCount(), 2):
-                time_row = row
+                segment_start_row = row  # 구간 시작 행
                 
                 # 해당 구간의 필수 입력 값들 확인 (START, END, 거리)
-                start_frame = self._get_cell_value(time_row, 1)
-                end_frame = self._get_cell_value(time_row, 2)
-                distance = self._get_cell_value(time_row, 3)
+                start_frame = self._get_cell_value(segment_start_row, 1)
+                end_frame = self._get_cell_value(segment_start_row, 2)
+                distance = self._get_cell_value(segment_start_row, 3)
                 
                 # 해당 구간의 조건이 충족되면 계산 실행
                 if start_frame and end_frame and distance:
@@ -841,30 +837,35 @@ class TableWindow(QMainWindow):
     def _collect_and_send_table_data(self):
         """테이블 데이터 수집 후 Data Bridge로 전송"""
         try:
+            self.logger.info("=== 데이터 수집 시작 ===")
             segments_data = []
             
             # 메인 테이블에서 구간별 데이터 처리 (2행씩 그룹)
             for row in range(2, self.main_table.rowCount(), 2):
-                time_row = row
-                vel_row = row + 1
+                segment_start_row = row      # 구간 시작 행 (주요 병합된 데이터)
+                segment_end_row = row + 1    # 구간 끝 행 (끝 상태 데이터)
                 
                 # 각 구간의 데이터 추출
                 segment_data = {}
                 
-                # 병합된 셀 (0, 1, 2, 3, 8, 9, 10): Time 행에서만 값 가져오기
-                segment_data['segment_num'] = self._get_cell_value(time_row, 0)
-                segment_data['frame_start'] = self._get_cell_value(time_row, 1)
-                segment_data['frame_end'] = self._get_cell_value(time_row, 2)
-                segment_data['distance'] = self._get_cell_value(time_row, 3)
-                segment_data['acceleration'] = self._get_cell_value(time_row, 8)
-                segment_data['duration'] = self._get_cell_value(time_row, 9)
-                segment_data['acc_dec_type'] = self._get_cell_value(time_row, 10)
+                # 병합된 셀 (0, 1, 2, 3, 5, 8, 9, 10): 시작 행에서만 값 가져오기
+                segment_data['segment_num'] = self._get_cell_value(segment_start_row, 0)
+                segment_data['frame_start'] = self._get_cell_value(segment_start_row, 1)
+                segment_data['frame_end'] = self._get_cell_value(segment_start_row, 2)
+                segment_data['distance'] = self._get_cell_value(segment_start_row, 3)
+                segment_data['avg_velocity'] = self._get_cell_value(segment_start_row, 5)  # 병합된 셀 - 시작 행에서 읽기
+                segment_data['acceleration'] = self._get_cell_value(segment_start_row, 8)
+                segment_data['duration'] = self._get_cell_value(segment_start_row, 9)
+                segment_data['acc_dec_type'] = self._get_cell_value(segment_start_row, 10)
                 
-                # 병합되지 않은 셀 (4, 5, 6, 7): 각 행에서 값 가져오기
-                segment_data['avg_time'] = self._get_cell_value(time_row, 4)
-                segment_data['avg_velocity'] = self._get_cell_value(vel_row, 5) if vel_row < self.main_table.rowCount() else ""
-                segment_data['acc_time'] = self._get_cell_value(time_row, 6)
-                segment_data['acc_velocity'] = self._get_cell_value(vel_row, 7) if vel_row < self.main_table.rowCount() else ""
+                # 병합되지 않은 셀: 각 행에서 각각의 상태 데이터 가져오기
+                segment_data['avg_time'] = self._get_cell_value(segment_start_row, 4)  # 시작 상태 시간
+                segment_data['acc_time'] = self._get_cell_value(segment_start_row, 6)   # 시작 상태 가속시간
+                segment_data['acc_velocity'] = self._get_cell_value(segment_end_row, 7) if segment_end_row < self.main_table.rowCount() else ""  # 끝 상태 속도
+                
+                # 디버깅: 수집된 데이터 확인
+                segment_num = (segment_start_row - 2) // 2 + 1
+                self.logger.info(f"수집된 구간 {segment_num}: avg_time='{segment_data['avg_time']}', avg_velocity='{segment_data['avg_velocity']}'")
                 
                 segments_data.append(segment_data)
             
@@ -879,8 +880,16 @@ class TableWindow(QMainWindow):
                         'fps': float(fps_value) if fps_value else 30.0
                     }
                 }
+                
+                # 디버깅: DataBridge로 전송되는 데이터 확인
+                self.logger.info(f"=== DataBridge 전송 데이터 ===")
+                self.logger.info(f"전송할 구간 수: {len(segments_data)}")
+                for i, segment in enumerate(segments_data):
+                    self.logger.info(f"구간 {i+1}: frame_start={segment.get('frame_start')}, frame_end={segment.get('frame_end')}, distance={segment.get('distance')}")
+                    self.logger.info(f"        avg_time={segment.get('avg_time')}, avg_velocity={segment.get('avg_velocity')}")
+                
                 self.data_bridge.update_from_table(table_data)
-                self.logger.debug("테이블 데이터 전송 완료")
+                self.logger.info("테이블 데이터 DataBridge 전송 완료")
             
         except Exception as e:
             self.logger.error(f"테이블 데이터 수집 실패: {e}")
@@ -917,8 +926,8 @@ class TableWindow(QMainWindow):
                 self.main_table.insertRow(start_row)
                 self.main_table.insertRow(start_row + 1)
                 
-                time_row = start_row
-                vel_row = start_row + 1
+                segment_start_row = start_row  # 구간 시작 행 (주요 병합된 데이터)
+                segment_end_row = start_row + 1   # 구간 끝 행 (끝 상태 데이터)
                 
                 # 병합 대상 열 (0, 1, 2, 3, 4, 5, 8, 9, 10)
                 merge_columns = [0, 1, 2, 3, 4, 5, 8, 9, 10]
@@ -957,9 +966,9 @@ class TableWindow(QMainWindow):
                         elif col in [4, 5, 9, 10]:  # 자동 계산
                             item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
                         
-                        self.main_table.setItem(time_row, col, item)
+                        self.main_table.setItem(segment_start_row, col, item)
                         # setSpan으로 셀 병합 (row, col, rowspan, colspan)
-                        self.main_table.setSpan(time_row, col, 2, 1)
+                        self.main_table.setSpan(segment_start_row, col, 2, 1)
                         
                     else:
                         # 병합하지 않는 열 (6, 7): 각 행에 개별 값 설정
@@ -977,7 +986,7 @@ class TableWindow(QMainWindow):
                         if col == 7:  # acc_velocity는 모든 행 색상
                             time_item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
                         
-                        self.main_table.setItem(time_row, col, time_item)
+                        self.main_table.setItem(segment_start_row, col, time_item)
                         
                         # Vel 행 (홀수행)
                         vel_value = ""
@@ -993,11 +1002,11 @@ class TableWindow(QMainWindow):
                         if col == 7:  # acc_velocity (모든 행 색상)
                             vel_item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
                         
-                        self.main_table.setItem(vel_row, col, vel_item)
+                        self.main_table.setItem(segment_end_row, col, vel_item)
                 
                 # 행 높이 설정
-                self.main_table.setRowHeight(time_row, 30)
-                self.main_table.setRowHeight(vel_row, 30)
+                self.main_table.setRowHeight(segment_start_row, 30)
+                self.main_table.setRowHeight(segment_end_row, 30)
             
             # FPS 값 설정
             fps_value = settings.get('fps', 30.0)
@@ -1246,6 +1255,17 @@ class TableWindow(QMainWindow):
             # 자동 계산 실행
             self._check_and_calculate_auto_values()
             
+            # Qt 이벤트 처리 대기 (UI 업데이트 완료 보장)
+            QApplication.processEvents()
+            
+            # 디버깅: 자동 계산 후 실제 테이블 값 확인
+            self.logger.info("=== 프리셋 로드 후 테이블 값 확인 ===")
+            for row in range(2, self.main_table.rowCount(), 2):
+                segment_num = (row - 2) // 2 + 1
+                avg_time = self._get_cell_value(row, 4)
+                avg_velocity = self._get_cell_value(row, 5)
+                self.logger.info(f"구간 {segment_num}: avg_time={avg_time}, avg_velocity={avg_velocity}")
+            
             # 데이터 수집 및 전송
             self._collect_and_send_table_data()
             
@@ -1270,8 +1290,8 @@ class TableWindow(QMainWindow):
             self.main_table.insertRow(current_row)
             self.main_table.insertRow(current_row + 1)
             
-            time_row = current_row
-            vel_row = current_row + 1
+            segment_start_row = current_row      # 구간 시작 행 (주요 병합된 데이터)
+            segment_end_row = current_row + 1    # 구간 끝 행 (끝 상태 데이터)
             
             # 병합 대상 열 (0, 1, 2, 3, 4, 5, 8, 9, 10) - Time과 Vel도 병합 추가
             merge_columns = [0, 1, 2, 3, 4, 5, 8, 9, 10]
@@ -1306,9 +1326,9 @@ class TableWindow(QMainWindow):
                     elif col in [4, 5, 9, 10]:  # 자동 계산
                         item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
                     
-                    self.main_table.setItem(time_row, col, item)
+                    self.main_table.setItem(segment_start_row, col, item)
                     # setSpan으로 셀 병합 (row, col, rowspan, colspan)
-                    self.main_table.setSpan(time_row, col, 2, 1)
+                    self.main_table.setSpan(segment_start_row, col, 2, 1)
                     
                 else:
                     # 병합하지 않는 열 (6, 7): 각 행에 개별 값 설정
@@ -1326,7 +1346,7 @@ class TableWindow(QMainWindow):
                     if col == 7:  # acc_velocity는 모든 행 색상
                         time_item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
                     
-                    self.main_table.setItem(time_row, col, time_item)
+                    self.main_table.setItem(segment_start_row, col, time_item)
                     
                     # Vel 행 (홀수행)
                     vel_value = ""
@@ -1342,11 +1362,11 @@ class TableWindow(QMainWindow):
                     if col == 7:  # acc_velocity (모든 행 색상)
                         vel_item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
                     
-                    self.main_table.setItem(vel_row, col, vel_item)
+                    self.main_table.setItem(segment_end_row, col, vel_item)
             
             # 행 높이 설정
-            self.main_table.setRowHeight(time_row, 30)
-            self.main_table.setRowHeight(vel_row, 30)
+            self.main_table.setRowHeight(segment_start_row, 30)
+            self.main_table.setRowHeight(segment_end_row, 30)
             
             self.logger.debug(f"프리셋 구간 {segment_data.get('segment_num', '')} 추가 완료")
             

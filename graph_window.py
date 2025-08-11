@@ -110,8 +110,8 @@ class GraphWindow(QMainWindow):
         self.ax.set_xlabel('TIME (S)', fontsize=12)
         self.ax.set_ylabel('VELOCITY (KM/H)', fontsize=12)
         
-        # Y축 범위 설정
-        self.ax.set_ylim(0, 50)
+        # Y축 초기 범위 설정 (데이터 로드 후 자동 조정됨)
+        self.ax.set_ylim(0, 75)
         self.ax.yaxis.set_major_locator(plt.MultipleLocator(5))
         
         # 범례 설정
@@ -141,12 +141,21 @@ class GraphWindow(QMainWindow):
     def _on_data_updated(self, graph_data):
         """데이터 업데이트 처리"""
         try:
-            self.logger.debug("그래프 데이터 업데이트 시작")
+            self.logger.info("=== GraphWindow: 그래프 데이터 수신 ===")
             
             # 데이터 저장
             self.optimization_data = graph_data.get('optimization_velocity', [])
             self.video_analysis_data = graph_data.get('video_analysis_velocity', [])
             self.ground_truth_data = graph_data.get('ground_truth_velocity', [])
+            
+            self.logger.info(f"수신한 데이터: optimization={len(self.optimization_data)}개, video_analysis={len(self.video_analysis_data)}개")
+            
+            if self.video_analysis_data:
+                self.logger.info("Video Analysis 첫 2개 포인트:")
+                for i, point in enumerate(self.video_analysis_data[:2]):
+                    self.logger.info(f"  포인트 {i+1}: time={point['time']}, velocity={point['velocity']}")
+            else:
+                self.logger.warning("Video Analysis 데이터가 비어있음!")
             
             # 그래프 다시 그리기
             self._update_graph()
@@ -159,7 +168,11 @@ class GraphWindow(QMainWindow):
     
     def _update_graph(self):
         """그래프 다시 그리기"""
+        self.logger.info("=== GraphWindow: 그래프 업데이트 시작 ===")
+        self.logger.info(f"graph_visible={self.graph_visible}")
+        
         if not self.graph_visible:
+            self.logger.info("그래프가 숨겨진 상태이므로 업데이트 중단")
             return
         
         # 기존 그래프 지우기 (범례 제외)
@@ -170,6 +183,9 @@ class GraphWindow(QMainWindow):
         
         for line in lines_to_remove:
             line.remove()
+        
+        # X축, Y축 범위 자동 조정
+        self._adjust_axis_ranges()
         
         # 새 데이터로 그래프 그리기
         if self.optimization_data:
@@ -222,12 +238,20 @@ class GraphWindow(QMainWindow):
             times = [point['time'] for point in self.video_analysis_data]
             velocities = [point['velocity'] for point in self.video_analysis_data]
             
+            self.logger.info(f"Video Analysis 그래프 그리기: {len(times)}개 포인트")
+            self.logger.info(f"시간 범위: {min(times):.3f} ~ {max(times):.3f}")
+            self.logger.info(f"속도 범위: {min(velocities):.2f} ~ {max(velocities):.2f}")
+            
             self.ax.step(times, velocities,
                         color=VIDEO_ANALYSIS_VELOCITY_COLOR,
                         label='Video Analysis Velocity',
                         marker='s', markersize=POINT_SIZE,
                         linewidth=LINE_WIDTH, fillstyle='none',
                         where='post')
+            
+            self.logger.info("Video Analysis 그래프 그리기 완료")
+        else:
+            self.logger.warning("Video Analysis 데이터 없음 - 그래프 생성하지 않음")
         
         if self.ground_truth_data:
             times = [point['time'] for point in self.ground_truth_data]
@@ -243,6 +267,8 @@ class GraphWindow(QMainWindow):
         
         # 캔버스 다시 그리기
         self.canvas.draw()
+        
+        self.logger.info("=== GraphWindow: 그래프 업데이트 완료 ===")
     
     # === 마우스 이벤트 핸들러 ===
     
@@ -309,7 +335,7 @@ class GraphWindow(QMainWindow):
                     if abs(point['time'] - current_time) < 0.001 and i != self.selected_point_index:
                         point['velocity'] = new_velocity
                 
-                # 그래프 실시간 업데이트
+                # 그래프 실시간 업데이트 (Y축 범위도 자동 조정됨)
                 self._update_graph()
                 self.logger.debug(f"포인트 {self.selected_point_index} 속도 변경: {new_velocity:.2f} km/h")
     
@@ -376,6 +402,75 @@ class GraphWindow(QMainWindow):
                 self._show_error_message("저장 오류", f"SVG 저장 중 오류: {e}")
     
     # === 유틸리티 메서드 ===
+    
+    def _adjust_axis_ranges(self):
+        """X축, Y축 범위 자동 조정"""
+        try:
+            # 모든 데이터의 시간과 속도 값 수집
+            all_times = []
+            all_velocities = []
+            
+            if self.optimization_data:
+                all_times.extend([point['time'] for point in self.optimization_data])
+                all_velocities.extend([point['velocity'] for point in self.optimization_data])
+            if self.video_analysis_data:
+                all_times.extend([point['time'] for point in self.video_analysis_data])
+                all_velocities.extend([point['velocity'] for point in self.video_analysis_data])
+            if self.ground_truth_data:
+                all_times.extend([point['time'] for point in self.ground_truth_data])
+                all_velocities.extend([point['velocity'] for point in self.ground_truth_data])
+            
+            # X축 범위 조정 (시간)
+            if all_times:
+                min_time = min(all_times)
+                max_time = max(all_times)
+                
+                # 시간 시작점은 항상 0부터, 끝점은 최대 시간값 + 약간의 여유
+                time_margin = max_time * 0.05 if max_time > 0 else 1.0  # 5% 여유
+                x_min = 0
+                x_max = max_time + time_margin
+                
+                # X축 범위 설정
+                self.ax.set_xlim(x_min, x_max)
+                
+                self.logger.info(f"X축 범위 자동 조정: {x_min:.1f} ~ {x_max:.1f}")
+                self.logger.info(f"시간 데이터 범위: {min_time:.3f} ~ {max_time:.3f}")
+            else:
+                # 데이터가 없으면 기본 X축 범위
+                self.ax.set_xlim(0, 20)
+                self.logger.info("데이터가 없어 기본 X축 범위 사용: 0 ~ 20")
+            
+            # Y축 범위 조정 (속도 - 최고점이 Y축의 2/3 지점에 오도록)
+            if all_velocities:
+                min_vel = min(all_velocities)
+                max_vel = max(all_velocities)
+                
+                # 최소값은 0 또는 (min_vel - 여유공간) 중 큰 값
+                vel_range = max_vel - min_vel
+                margin = vel_range * 0.1 if vel_range > 0 else 5
+                y_min = max(0, min_vel - margin)
+                
+                # 실제 데이터 범위를 Y축의 2/3에 맞춤
+                data_range = max_vel - y_min
+                y_axis_range = data_range / (2/3)  # 데이터 범위가 Y축의 2/3가 되도록
+                y_max = y_min + y_axis_range
+                
+                # Y축 범위 설정
+                self.ax.set_ylim(y_min, y_max)
+                
+                self.logger.info(f"Y축 범위 자동 조정: {y_min:.1f} ~ {y_max:.1f}")
+                self.logger.info(f"속도 데이터 범위: {min_vel:.2f} ~ {max_vel:.2f}")
+                self.logger.info(f"최고점 위치: {((max_vel - y_min) / (y_max - y_min))*100:.1f}% 지점")
+            else:
+                # 데이터가 없으면 기본 Y축 범위
+                self.ax.set_ylim(0, 75)
+                self.logger.info("데이터가 없어 기본 Y축 범위 사용: 0 ~ 75")
+                
+        except Exception as e:
+            self.logger.error(f"축 범위 조정 실패: {e}")
+            # 실패 시 기본 범위
+            self.ax.set_xlim(0, 20)
+            self.ax.set_ylim(0, 75)
     
     def _validate_velocity_change(self, point_index, new_velocity):
         """속도 변경 시 가속도 제한 검증"""

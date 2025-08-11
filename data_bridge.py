@@ -89,10 +89,14 @@ class DataBridge(QObject):
     def update_from_table(self, table_data: Dict[str, Any]):
         """테이블에서 데이터 업데이트"""
         try:
-            self.logger.debug("테이블 데이터 업데이트 시작")
+            self.logger.info("=== DataBridge: 테이블 데이터 수신 ===")
             
             # 세그먼트 데이터 업데이트
             if 'segments' in table_data:
+                segments = table_data['segments']
+                self.logger.info(f"받은 구간 수: {len(segments)}")
+                for i, segment in enumerate(segments):
+                    self.logger.info(f"DataBridge 구간 {i+1}: avg_velocity={segment.get('avg_velocity')}, avg_time={segment.get('avg_time')}")
                 self._project_data['segments'] = table_data['segments']
             
             # 설정 데이터 업데이트
@@ -141,7 +145,7 @@ class DataBridge(QObject):
     def _calculate_graph_data(self):
         """테이블 데이터를 기반으로 그래프 데이터 계산"""
         try:
-            self.logger.debug("그래프 데이터 계산 시작")
+            self.logger.info("=== DataBridge: 그래프 데이터 계산 시작 ===")
             
             # 기존 최적화 속도 데이터 초기화
             optimization_velocity = []
@@ -150,13 +154,19 @@ class DataBridge(QObject):
             current_time = 0.0
             fps = self._project_data['settings']['fps']
             
-            for segment in self._project_data['segments']:
+            segments = self._project_data['segments']
+            self.logger.info(f"처리할 구간 수: {len(segments)}")
+            
+            for i, segment in enumerate(segments):
                 # 구간 데이터 추출
                 frame_start = self._parse_float(segment.get('frame_start', 0))
                 frame_end = self._parse_float(segment.get('frame_end', 0))
                 distance = self._parse_float(segment.get('distance', 0))
                 avg_time = self._parse_float(segment.get('avg_time', 0))
                 avg_velocity = self._parse_float(segment.get('avg_velocity', 0))
+                
+                self.logger.info(f"구간 {i+1}: frame_start={frame_start}, frame_end={frame_end}, distance={distance}")
+                self.logger.info(f"        avg_time={avg_time}, avg_velocity={avg_velocity}")
                 acc_time = self._parse_float(segment.get('acc_time', 0))
                 acc_velocity = self._parse_float(segment.get('acc_velocity', 0))
                 acceleration = self._parse_float(segment.get('acceleration', 0))
@@ -167,15 +177,19 @@ class DataBridge(QObject):
                     segment_duration = (frame_end - frame_start) / fps
                     avg_velocity_ms = avg_velocity / 3.6 if avg_velocity > 0 else 0  # km/h → m/s
                     
+                    self.logger.info(f"구간 {i+1} 처리: duration={segment_duration:.3f}초, fps={fps}")
+                    
                     # Video Analysis 데이터 (계단식)
-                    video_analysis_velocity.append({
-                        'time': current_time,
-                        'velocity': avg_velocity
-                    })
-                    video_analysis_velocity.append({
-                        'time': current_time + segment_duration,
-                        'velocity': avg_velocity
-                    })
+                    if avg_velocity > 0:
+                        point1 = {'time': current_time, 'velocity': avg_velocity}
+                        point2 = {'time': current_time + segment_duration, 'velocity': avg_velocity}
+                        
+                        video_analysis_velocity.append(point1)
+                        video_analysis_velocity.append(point2)
+                        
+                        self.logger.info(f"Video Analysis 포인트 추가: ({current_time:.3f}, {avg_velocity}) ({current_time + segment_duration:.3f}, {avg_velocity})")
+                    else:
+                        self.logger.warning(f"구간 {i+1}: avg_velocity가 0이므로 그래프 포인트 생성 안됨")
                     
                     # Optimization 데이터 (가속도 적용)
                     if acc_time > 0 and acc_velocity > 0:
@@ -218,7 +232,16 @@ class DataBridge(QObject):
             # 테이블에서 계산된 값들 업데이트
             self._update_calculated_values()
             
-            self.logger.debug(f"그래프 데이터 계산 완료: {len(optimization_velocity)}개 포인트")
+            self.logger.info(f"=== 그래프 데이터 계산 완료 ===")
+            self.logger.info(f"Optimization 포인트: {len(optimization_velocity)}개")
+            self.logger.info(f"Video Analysis 포인트: {len(video_analysis_velocity)}개")
+            
+            if video_analysis_velocity:
+                self.logger.info("Video Analysis 첫 번째 포인트들:")
+                for i, point in enumerate(video_analysis_velocity[:4]):
+                    self.logger.info(f"  포인트 {i+1}: time={point['time']:.3f}, velocity={point['velocity']}")
+            else:
+                self.logger.warning("Video Analysis 데이터가 비어있음!")
             
         except Exception as e:
             self.logger.error(f"그래프 데이터 계산 실패: {e}")
