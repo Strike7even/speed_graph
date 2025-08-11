@@ -191,39 +191,10 @@ class DataBridge(QObject):
                     else:
                         self.logger.warning(f"구간 {i+1}: avg_velocity가 0이므로 그래프 포인트 생성 안됨")
                     
-                    # Optimization 데이터 (가속도 적용)
-                    if acc_time > 0 and acc_velocity > 0:
-                        # 가속/감속 적용된 최적화 속도
-                        optimization_velocity.append({
-                            'time': current_time,
-                            'velocity': avg_velocity
-                        })
-                        
-                        # 가속/감속 구간
-                        optimization_velocity.append({
-                            'time': current_time + acc_time,
-                            'velocity': acc_velocity
-                        })
-                        
-                        # 남은 구간 (일정 속도)
-                        remaining_time = segment_duration - acc_time
-                        if remaining_time > 0:
-                            optimization_velocity.append({
-                                'time': current_time + segment_duration,
-                                'velocity': acc_velocity
-                            })
-                    else:
-                        # 일정 속도 유지
-                        optimization_velocity.append({
-                            'time': current_time,
-                            'velocity': avg_velocity
-                        })
-                        optimization_velocity.append({
-                            'time': current_time + segment_duration,
-                            'velocity': avg_velocity
-                        })
-                    
                     current_time += segment_duration
+            
+            # Optimization 데이터 생성 (새로운 1/2 지점 중간점 기반 알고리즘)
+            optimization_velocity = self._generate_optimization_velocity(segments, fps)
             
             # 그래프 데이터 업데이트
             self._project_data['graph_data']['optimization_velocity'] = optimization_velocity
@@ -246,6 +217,91 @@ class DataBridge(QObject):
         except Exception as e:
             self.logger.error(f"그래프 데이터 계산 실패: {e}")
             self.error_occurred.emit(f"그래프 데이터 계산 중 오류: {e}")
+    
+    def _generate_optimization_velocity(self, segments, fps):
+        """새로운 Optimization Velocity 알고리즘: 1/2 지점 중간점 기반 직선 연결"""
+        try:
+            self.logger.info("=== Optimization Velocity 생성 시작 (1/2 지점 알고리즘) ===")
+            
+            optimization_velocity = []
+            current_time = 0.0
+            previous_end_velocity = None  # 이전 구간의 끝 속도 (연속성 보장)
+            
+            for i, segment in enumerate(segments):
+                # 구간 데이터 추출
+                frame_start = self._parse_float(segment.get('frame_start', 0))
+                frame_end = self._parse_float(segment.get('frame_end', 0))
+                avg_velocity = self._parse_float(segment.get('avg_velocity', 0))
+                
+                if frame_start > 0 and frame_end > 0 and fps > 0 and avg_velocity > 0:
+                    # 구간 시간 계산
+                    segment_duration = (frame_end - frame_start) / fps
+                    
+                    # 구간 시작/중간/끝 시간 계산
+                    start_time = current_time
+                    mid_time = current_time + (segment_duration / 2)  # 1/2 지점
+                    end_time = current_time + segment_duration
+                    
+                    # 구간 시작 속도 결정
+                    if i == 0:
+                        # 첫 번째 구간: avg_velocity를 시작 속도로 사용
+                        start_velocity = avg_velocity
+                    else:
+                        # 이후 구간: 이전 구간의 끝 속도 사용 (연속성 보장)
+                        start_velocity = previous_end_velocity if previous_end_velocity is not None else avg_velocity
+                    
+                    # 중간점 속도는 avg_velocity 사용
+                    mid_velocity = avg_velocity
+                    
+                    # 시작점 → 중간점 직선의 기울기 계산
+                    # velocity = start_velocity + slope * (time - start_time)
+                    time_diff = mid_time - start_time
+                    if time_diff > 0:
+                        slope = (mid_velocity - start_velocity) / time_diff
+                        
+                        # 직선을 끝점까지 연장하여 끝점 속도 계산
+                        end_velocity = start_velocity + slope * (end_time - start_time)
+                        
+                        # 음수 속도 방지
+                        end_velocity = max(0, end_velocity)
+                        
+                        self.logger.info(f"구간 {i+1}: 시작={start_velocity:.2f}, 중간={mid_velocity:.2f}, 끝={end_velocity:.2f} km/h")
+                        self.logger.info(f"        시간: {start_time:.3f}~{end_time:.3f}초, 기울기={slope:.3f}")
+                        
+                        # 포인트 생성: 시작점과 끝점만 (중간점은 계산용으로만 사용)
+                        optimization_velocity.append({
+                            'time': start_time,
+                            'velocity': start_velocity
+                        })
+                        
+                        optimization_velocity.append({
+                            'time': end_time,
+                            'velocity': end_velocity
+                        })
+                        
+                        # 다음 구간을 위해 끝 속도 저장
+                        previous_end_velocity = end_velocity
+                        
+                    else:
+                        self.logger.warning(f"구간 {i+1}: 시간 차이가 0이므로 건너뜀")
+                        previous_end_velocity = avg_velocity
+                    
+                    current_time += segment_duration
+                else:
+                    self.logger.warning(f"구간 {i+1}: 필수 데이터 누락 또는 무효 (frame_start={frame_start}, frame_end={frame_end}, avg_velocity={avg_velocity})")
+            
+            self.logger.info(f"Optimization Velocity 생성 완료: {len(optimization_velocity)}개 포인트")
+            
+            if optimization_velocity:
+                self.logger.info("Optimization 첫 번째 포인트들:")
+                for i, point in enumerate(optimization_velocity[:6]):
+                    self.logger.info(f"  포인트 {i+1}: time={point['time']:.3f}, velocity={point['velocity']:.2f}")
+            
+            return optimization_velocity
+            
+        except Exception as e:
+            self.logger.error(f"Optimization Velocity 생성 실패: {e}")
+            return []
     
     def _parse_float(self, value, default=0.0):
         """문자열을 float로 안전하게 변환"""

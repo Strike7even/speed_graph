@@ -386,6 +386,9 @@ class TableWindow(QMainWindow):
                 # 변경사항 플래그 설정
                 self.data_bridge._unsaved_changes = True
             
+            # 구간 추가 후 그래프 업데이트를 위해 데이터 전송
+            self._collect_and_send_table_data()
+            
             self.logger.info(f"구간 {segment_num} 추가 완료")
             
         except Exception as e:
@@ -417,6 +420,9 @@ class TableWindow(QMainWindow):
                     
                     # 변경사항 플래그 설정
                     self.data_bridge._unsaved_changes = True
+            
+            # 구간 삭제 후 그래프 업데이트를 위해 데이터 전송
+            self._collect_and_send_table_data()
             
             self.logger.info(f"구간 {segment_num} 제거 완료")
             
