@@ -93,6 +93,12 @@ class TableWindow(QMainWindow):
         self.settings_button = QPushButton("설정")
         button_layout.addWidget(self.settings_button)
         
+        # 프리셋 버튼들
+        self.preset1_button = QPushButton("프리셋1")
+        self.preset2_button = QPushButton("프리셋2")
+        button_layout.addWidget(self.preset1_button)
+        button_layout.addWidget(self.preset2_button)
+        
         button_layout.addStretch(1)
         main_layout.addLayout(button_layout)
     
@@ -322,6 +328,10 @@ class TableWindow(QMainWindow):
         self.save_button.clicked.connect(self._save_project)
         self.load_button.clicked.connect(self._load_project)
         self.settings_button.clicked.connect(self._open_settings)
+        
+        # 프리셋 버튼 시그널 연결
+        self.preset1_button.clicked.connect(self._load_preset1)
+        self.preset2_button.clicked.connect(self._load_preset2)
         
         # 테이블 데이터 변경 시그널 연결
         self.main_table.itemChanged.connect(self._on_table_item_changed)
@@ -1024,6 +1034,324 @@ class TableWindow(QMainWindow):
     def _show_info_message(self, title, message):
         """정보 메시지 표시"""
         QMessageBox.information(self, title, message)
+    
+    # === 프리셋 데이터 및 로드 메서드 ===
+    
+    def _get_preset1_data(self):
+        """프리셋1 테스트 데이터 - 사용자 제공 데이터"""
+        return {
+            'fps': 30.0,
+            'segments': [
+                {
+                    'segment_num': 1,
+                    'frame_start': '478',
+                    'frame_end': '610',
+                    'distance': '95.54',
+                    'acceleration': '',
+                    'acc_time': '',
+                    'acc_velocity': ''
+                },
+                {
+                    'segment_num': 2,
+                    'frame_start': '610',
+                    'frame_end': '725',
+                    'distance': '81.01',
+                    'acceleration': '',
+                    'acc_time': '',
+                    'acc_velocity': ''
+                },
+                {
+                    'segment_num': 3,
+                    'frame_start': '725',
+                    'frame_end': '858',
+                    'distance': '83.08',
+                    'acceleration': '',
+                    'acc_time': '',
+                    'acc_velocity': ''
+                },
+                {
+                    'segment_num': 4,
+                    'frame_start': '858',
+                    'frame_end': '961',
+                    'distance': '61.28',
+                    'acceleration': '',
+                    'acc_time': '',
+                    'acc_velocity': ''
+                },
+                {
+                    'segment_num': 5,
+                    'frame_start': '961',
+                    'frame_end': '1080',
+                    'distance': '69.73',
+                    'acceleration': '',
+                    'acc_time': '',
+                    'acc_velocity': ''
+                }
+            ]
+        }
+    
+    def _get_preset2_data(self):
+        """프리셋2 테스트 데이터 - 사용자 제공 데이터"""
+        return {
+            'fps': 30.0,
+            'segments': [
+                {
+                    'segment_num': 1,
+                    'frame_start': '620',
+                    'frame_end': '650',
+                    'distance': '8.64',
+                    'acceleration': '',
+                    'acc_time': '',
+                    'acc_velocity': ''
+                },
+                {
+                    'segment_num': 2,
+                    'frame_start': '650',
+                    'frame_end': '680',
+                    'distance': '8.64',
+                    'acceleration': '',
+                    'acc_time': '',
+                    'acc_velocity': ''
+                },
+                {
+                    'segment_num': 3,
+                    'frame_start': '680',
+                    'frame_end': '710',
+                    'distance': '7.58',
+                    'acceleration': '',
+                    'acc_time': '',
+                    'acc_velocity': ''
+                },
+                {
+                    'segment_num': 4,
+                    'frame_start': '710',
+                    'frame_end': '740',
+                    'distance': '6.60',
+                    'acceleration': '',
+                    'acc_time': '',
+                    'acc_velocity': ''
+                },
+                {
+                    'segment_num': 5,
+                    'frame_start': '740',
+                    'frame_end': '770',
+                    'distance': '6.15',
+                    'acceleration': '',
+                    'acc_time': '',
+                    'acc_velocity': ''
+                },
+                {
+                    'segment_num': 6,
+                    'frame_start': '770',
+                    'frame_end': '800',
+                    'distance': '5.59',
+                    'acceleration': '',
+                    'acc_time': '',
+                    'acc_velocity': ''
+                },
+                {
+                    'segment_num': 7,
+                    'frame_start': '800',
+                    'frame_end': '830',
+                    'distance': '5.13',
+                    'acceleration': '',
+                    'acc_time': '',
+                    'acc_velocity': ''
+                },
+                {
+                    'segment_num': 8,
+                    'frame_start': '830',
+                    'frame_end': '860',
+                    'distance': '4.61',
+                    'acceleration': '',
+                    'acc_time': '',
+                    'acc_velocity': ''
+                },
+                {
+                    'segment_num': 9,
+                    'frame_start': '860',
+                    'frame_end': '890',
+                    'distance': '5.54',
+                    'acceleration': '',
+                    'acc_time': '',
+                    'acc_velocity': ''
+                },
+                {
+                    'segment_num': 10,
+                    'frame_start': '890',
+                    'frame_end': '920',
+                    'distance': '4.81',
+                    'acceleration': '',
+                    'acc_time': '',
+                    'acc_velocity': ''
+                },
+                {
+                    'segment_num': 11,
+                    'frame_start': '920',
+                    'frame_end': '950',
+                    'distance': '5.36',
+                    'acceleration': '',
+                    'acc_time': '',
+                    'acc_velocity': ''
+                }
+            ]
+        }
+    
+    def _load_preset1(self):
+        """프리셋1 데이터 로드"""
+        try:
+            self.logger.info("프리셋1 데이터 로드 시작")
+            preset_data = self._get_preset1_data()
+            self._apply_preset_data(preset_data)
+            self._show_info_message("프리셋 로드", "프리셋1 데이터가 성공적으로 로드되었습니다.")
+            self.logger.info("프리셋1 데이터 로드 완료")
+            
+        except Exception as e:
+            self.logger.error(f"프리셋1 로드 실패: {e}")
+            self._show_error_message("프리셋 로드 오류", f"프리셋1 로드 중 오류가 발생했습니다: {e}")
+    
+    def _load_preset2(self):
+        """프리셋2 데이터 로드"""
+        try:
+            self.logger.info("프리셋2 데이터 로드 시작")
+            preset_data = self._get_preset2_data()
+            self._apply_preset_data(preset_data)
+            self._show_info_message("프리셋 로드", "프리셋2 데이터가 성공적으로 로드되었습니다.")
+            self.logger.info("프리셋2 데이터 로드 완료")
+            
+        except Exception as e:
+            self.logger.error(f"프리셋2 로드 실패: {e}")
+            self._show_error_message("프리셋 로드 오류", f"프리셋2 로드 중 오류가 발생했습니다: {e}")
+    
+    def _apply_preset_data(self, preset_data):
+        """프리셋 데이터를 테이블에 적용"""
+        try:
+            # 테이블 아이템 변경 시그널 임시 차단
+            self.main_table.itemChanged.disconnect()
+            self.fps_table.itemChanged.disconnect()
+            
+            # FPS 값 설정
+            fps_item = self.fps_table.item(0, 1)
+            if fps_item:
+                fps_item.setText(str(preset_data['fps']))
+            
+            # 기존 구간들 제거 (헤더 2행 제외하고 모든 행 삭제)
+            while self.main_table.rowCount() > 2:
+                self.main_table.removeRow(2)
+            
+            # 프리셋 구간 데이터 추가
+            for segment in preset_data['segments']:
+                self._add_preset_segment(segment)
+            
+            # 자동 계산 실행
+            self._check_and_calculate_auto_values()
+            
+            # 데이터 수집 및 전송
+            self._collect_and_send_table_data()
+            
+            # 시그널 다시 연결
+            self.main_table.itemChanged.connect(self._on_table_item_changed)
+            self.fps_table.itemChanged.connect(self._on_fps_changed)
+            
+            self.logger.debug("프리셋 데이터 적용 완료")
+            
+        except Exception as e:
+            self.logger.error(f"프리셋 데이터 적용 실패: {e}")
+            # 시그널 다시 연결 (에러 시에도)
+            self.main_table.itemChanged.connect(self._on_table_item_changed)
+            self.fps_table.itemChanged.connect(self._on_fps_changed)
+            raise
+    
+    def _add_preset_segment(self, segment_data):
+        """프리셋 구간 데이터를 테이블에 추가"""
+        try:
+            # 새 구간을 위한 행 2개 추가
+            current_row = self.main_table.rowCount()
+            self.main_table.insertRow(current_row)
+            self.main_table.insertRow(current_row + 1)
+            
+            time_row = current_row
+            vel_row = current_row + 1
+            
+            # 병합 대상 열 (0, 1, 2, 3, 4, 5, 8, 9, 10) - Time과 Vel도 병합 추가
+            merge_columns = [0, 1, 2, 3, 4, 5, 8, 9, 10]
+            
+            for col in range(11):
+                if col in merge_columns:
+                    # 병합 대상 열: Time 행에만 값 설정하고 rowspan=2 적용
+                    value = ""
+                    if col == 0:
+                        value = str(segment_data.get('segment_num', ''))
+                    elif col == 1:
+                        value = str(segment_data.get('frame_start', ''))
+                    elif col == 2:
+                        value = str(segment_data.get('frame_end', ''))
+                    elif col == 3:
+                        value = str(segment_data.get('distance', ''))
+                    elif col == 8:
+                        value = str(segment_data.get('acceleration', ''))
+                    elif col == 9:
+                        value = str(segment_data.get('duration', ''))
+                    elif col == 10:
+                        value = str(segment_data.get('acc_dec_type', ''))
+                    
+                    item = QTableWidgetItem(value)
+                    item.setTextAlignment(Qt.AlignCenter)
+                    
+                    # 색상 설정
+                    if col in [1, 2, 8]:  # 사용자 입력
+                        item.setBackground(QBrush(QColor(USER_INPUT_COLOR)))
+                    elif col == 3:  # PC-Crash 연동
+                        item.setBackground(QBrush(QColor(PC_CRASH_INTEGRATION_COLOR)))
+                    elif col in [4, 5, 9, 10]:  # 자동 계산
+                        item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
+                    
+                    self.main_table.setItem(time_row, col, item)
+                    # setSpan으로 셀 병합 (row, col, rowspan, colspan)
+                    self.main_table.setSpan(time_row, col, 2, 1)
+                    
+                else:
+                    # 병합하지 않는 열 (6, 7): 각 행에 개별 값 설정
+                    # Time 행 (짝수행)
+                    time_value = ""
+                    if col == 6:
+                        time_value = str(segment_data.get('acc_time', ''))
+                    
+                    time_item = QTableWidgetItem(time_value)
+                    time_item.setTextAlignment(Qt.AlignCenter)
+                    
+                    # 색상 규칙 적용
+                    # 6열: 모든 행 색상 없음
+                    # 7열: 모든 행 색상 적용
+                    if col == 7:  # acc_velocity는 모든 행 색상
+                        time_item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
+                    
+                    self.main_table.setItem(time_row, col, time_item)
+                    
+                    # Vel 행 (홀수행)
+                    vel_value = ""
+                    if col == 7:
+                        vel_value = str(segment_data.get('acc_velocity', ''))
+                    
+                    vel_item = QTableWidgetItem(vel_value)
+                    vel_item.setTextAlignment(Qt.AlignCenter)
+                    
+                    # 색상 규칙 적용
+                    # 6열: 모든 행 색상 없음
+                    # 7열: 모든 행 색상 적용
+                    if col == 7:  # acc_velocity (모든 행 색상)
+                        vel_item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
+                    
+                    self.main_table.setItem(vel_row, col, vel_item)
+            
+            # 행 높이 설정
+            self.main_table.setRowHeight(time_row, 30)
+            self.main_table.setRowHeight(vel_row, 30)
+            
+            self.logger.debug(f"프리셋 구간 {segment_data.get('segment_num', '')} 추가 완료")
+            
+        except Exception as e:
+            self.logger.error(f"프리셋 구간 추가 실패: {e}")
     
     def closeEvent(self, event):
         """윈도우 종료 이벤트"""
