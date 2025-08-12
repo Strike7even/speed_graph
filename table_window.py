@@ -214,9 +214,11 @@ class TableWindow(QMainWindow):
                 start_item = QTableWidgetItem("")
                 start_item.setTextAlignment(Qt.AlignCenter)
                 
-                # 6열: 모든 행 색상 없음
-                # 7열: 모든 행 색상 적용
-                if col == 7:  # acc_velocity
+                # 6열: 자동 계산 색상 (가속도 적용 시간)
+                # 7열: 자동 계산 색상 (최적화 속도)
+                if col == 6:  # acc_time은 자동 계산
+                    start_item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
+                elif col == 7:  # acc_velocity는 자동 계산 (최적화 그래프 연동)
                     start_item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
                 
                 self.main_table.setItem(segment_start_row, col, start_item)
@@ -225,9 +227,11 @@ class TableWindow(QMainWindow):
                 end_item = QTableWidgetItem("")
                 end_item.setTextAlignment(Qt.AlignCenter)
                 
-                # 6열: 모든 행 색상 없음
-                # 7열: 모든 행 색상 적용
-                if col == 7:  # acc_velocity (끝 상태에서 중요한 값)
+                # 6열: 자동 계산 색상 (가속도 적용 시간)
+                # 7열: 자동 계산 색상 (최적화 속도)
+                if col == 6:  # acc_time은 자동 계산
+                    end_item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
+                elif col == 7:  # acc_velocity는 자동 계산 (최적화 그래프 연동)
                     end_item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
                 
                 self.main_table.setItem(segment_end_row, col, end_item)
@@ -336,6 +340,7 @@ class TableWindow(QMainWindow):
         # Data Bridge 시그널 연결
         if self.data_bridge:
             self.data_bridge.table_data_updated.connect(self._on_data_updated)
+            self.data_bridge.graph_data_updated.connect(self._on_graph_data_updated)  # 그래프 데이터 시그널 추가
             self.data_bridge.error_occurred.connect(self._show_error_message)
     
     # === 버튼 이벤트 핸들러 ===
@@ -610,17 +615,37 @@ class TableWindow(QMainWindow):
             self.logger.debug("테이블 데이터 업데이트 수신")
             
             # 데이터가 dict 형태로 전달되는지 확인
-            if isinstance(data, dict) and 'segments' in data:
-                # Data Bridge의 세그먼트 데이터로 테이블 새로고침
-                if self.data_bridge:
-                    # 기존 데이터 업데이트
-                    self.data_bridge._project_data['segments'] = data['segments']
-                    # 테이블 새로고침
-                    self._refresh_table_from_data()
+            if isinstance(data, dict):
+                # 최적화 그래프 데이터가 포함된 경우 7열 업데이트
+                if 'optimization_velocity' in data:
+                    self.logger.info("최적화 속도 데이터 감지 - 7열 업데이트 실행")
+                    self._update_optimization_velocity_column(data['optimization_velocity'])
+                
+                # 세그먼트 데이터 업데이트
+                if 'segments' in data:
+                    # Data Bridge의 세그먼트 데이터로 테이블 새로고침
+                    if self.data_bridge:
+                        # 기존 데이터 업데이트
+                        self.data_bridge._project_data['segments'] = data['segments']
+                        # 테이블 새로고침
+                        self._refresh_table_from_data()
             
         except Exception as e:
             self.logger.error(f"데이터 업데이트 처리 실패: {e}")
             self._show_error_message("데이터 업데이트 오류", f"테이블 업데이트 중 오류가 발생했습니다: {e}")
+    
+    def _on_graph_data_updated(self, graph_data):
+        """그래프 데이터 업데이트 처리 (초기 생성 시 7열 업데이트용)"""
+        try:
+            self.logger.info("=== 테이블: 그래프 데이터 업데이트 수신 ===")
+            
+            # 최적화 그래프 데이터가 있으면 7열 업데이트
+            if 'optimization_velocity' in graph_data:
+                self.logger.info("최적화 속도 데이터 감지 - 7열 초기 업데이트 실행")
+                self._update_optimization_velocity_column(graph_data['optimization_velocity'])
+            
+        except Exception as e:
+            self.logger.error(f"그래프 데이터 업데이트 처리 실패: {e}")
     
     # === 자동 계산 메서드 ===
     
@@ -812,6 +837,156 @@ class TableWindow(QMainWindow):
         except Exception as e:
             self.logger.error(f"구간 속도 계산 실패: {e}")
     
+    def _calculate_acc_time_values(self):
+        """6열 가속도 적용 시간 자동 계산"""
+        try:
+            # 각 구간별로 계산 (2행씩 그룹)
+            for row in range(2, self.main_table.rowCount(), 2):
+                segment_start_row = row      # 구간 시작 행 (윗셀)
+                segment_end_row = row + 1    # 구간 끝 행 (아랫셀)
+                segment_index = (row - 2) // 2
+                
+                # 윗셀: 이전구간의 time 값 (1구간은 0.000)
+                if segment_index == 0:
+                    prev_time = "0.000"
+                else:
+                    prev_segment_row = row - 2
+                    prev_time = self._get_cell_value(prev_segment_row, 4)
+                    if not prev_time:
+                        prev_time = "0.000"
+                
+                # 아랫셀: 현재구간의 time 값
+                curr_time = self._get_cell_value(segment_start_row, 4)
+                if not curr_time:
+                    curr_time = "0.000"
+                
+                # 6열에 값 설정
+                start_time_item = self.main_table.item(segment_start_row, 6)
+                end_time_item = self.main_table.item(segment_end_row, 6)
+                
+                if start_time_item:
+                    start_time_item.setText(prev_time)
+                if end_time_item:
+                    end_time_item.setText(curr_time)
+                
+                self.logger.debug(f"구간 {segment_index + 1} 가속도 시간 설정: 윗셀={prev_time}, 아랫셀={curr_time}")
+            
+        except Exception as e:
+            self.logger.error(f"가속도 시간 계산 실패: {e}")
+    
+    def _calculate_segment_acc_time_values(self, start_row):
+        """특정 구간의 6열 가속도 적용 시간 계산"""
+        try:
+            segment_start_row = start_row      # 구간 시작 행 (윗셀)
+            segment_end_row = start_row + 1    # 구간 끝 행 (아랫셀)
+            segment_index = (start_row - 2) // 2
+            
+            # 윗셀: 이전구간의 time 값 (1구간은 0.000)
+            if segment_index == 0:
+                prev_time = "0.000"
+            else:
+                prev_segment_row = start_row - 2
+                prev_time = self._get_cell_value(prev_segment_row, 4)
+                if not prev_time:
+                    prev_time = "0.000"
+            
+            # 아랫셀: 현재구간의 time 값
+            curr_time = self._get_cell_value(segment_start_row, 4)
+            if not curr_time:
+                curr_time = "0.000"
+            
+            # 6열에 값 설정
+            start_time_item = self.main_table.item(segment_start_row, 6)
+            end_time_item = self.main_table.item(segment_end_row, 6)
+            
+            if start_time_item:
+                start_time_item.setText(prev_time)
+            if end_time_item:
+                end_time_item.setText(curr_time)
+            
+            self.logger.debug(f"구간 {segment_index + 1} 가속도 시간 설정: 윗셀={prev_time}, 아랫셀={curr_time}")
+            
+        except Exception as e:
+            self.logger.error(f"구간 가속도 시간 계산 실패: {e}")
+    
+    def _update_optimization_velocity_column(self, optimization_data):
+        """7열에 최적화 그래프 속도 데이터 연동"""
+        try:
+            if not optimization_data:
+                return
+            
+            self.logger.info(f"=== 7열 최적화 속도 업데이트 시작 ===")
+            self.logger.info(f"수신한 최적화 데이터: {len(optimization_data)}개 포인트")
+            
+            # 모든 optimization_data 포인트 상세 로깅
+            self.logger.info("=== optimization_data 전체 포인트 분석 ===")
+            for i, point in enumerate(optimization_data):
+                time_val = point.get('time', 0.0)
+                velocity_val = point.get('velocity', 0.0)
+                self.logger.info(f"optimization_data[{i}]: time={time_val:.3f}초, velocity={velocity_val:.2f}km/h")
+            self.logger.info("=" * 50)
+            
+            # 시그널 연결 일시 해제 (무한 루프 방지)
+            try:
+                self.main_table.itemChanged.disconnect(self._on_table_item_changed)
+            except TypeError:
+                # 이미 연결이 해제되어 있거나 연결된 적이 없는 경우
+                pass
+            
+            # 각 구간별로 처리 (2행씩 그룹)
+            for row in range(2, self.main_table.rowCount(), 2):
+                segment_start_row = row      # 구간 시작 행 (윗셀)
+                segment_end_row = row + 1    # 구간 끝 행 (아랫셀)
+                segment_index = (row - 2) // 2
+                
+                self.logger.info(f"처리중: row={row}, segment_index={segment_index}")
+                
+                # 해당 구간에 대응하는 최적화 데이터가 있는지 확인
+                if segment_index < len(optimization_data):
+                    # 구간 시작점 속도 (윗셀)
+                    data_index = segment_index * 2  # 실제 데이터 인덱스 (0,2,4,6,8)
+                    if data_index < len(optimization_data):
+                        start_velocity = optimization_data[data_index].get('velocity', 0.0)
+                        start_vel_item = self.main_table.item(segment_start_row, 7)
+                        if start_vel_item:
+                            start_vel_item.setText(f"{start_velocity:.2f}")
+                        
+                        self.logger.info(f"구간 {segment_index + 1} 시작점 (행{segment_start_row}): optimization_data[{data_index}] = {start_velocity:.2f}")
+                    
+                    # 구간 끝점 속도 (아랫셀) - 다음 데이터 포인트
+                    end_data_index = segment_index * 2 + 1  # 실제 데이터 인덱스 (1,3,5,7,9)
+                    if end_data_index < len(optimization_data):
+                        end_velocity = optimization_data[end_data_index].get('velocity', 0.0)
+                        end_vel_item = self.main_table.item(segment_end_row, 7)
+                        if end_vel_item:
+                            end_vel_item.setText(f"{end_velocity:.2f}")
+                        
+                        self.logger.info(f"구간 {segment_index + 1} 끝점 (행{segment_end_row}): optimization_data[{end_data_index}] = {end_velocity:.2f}")
+                    else:
+                        # 마지막 구간의 경우 끝점은 마지막 포인트와 동일
+                        end_vel_item = self.main_table.item(segment_end_row, 7)
+                        if end_vel_item:
+                            end_vel_item.setText(f"{start_velocity:.2f}")
+                        
+                        self.logger.debug(f"마지막 구간 {segment_index + 1} 끝점 속도: {start_velocity:.2f}")
+            
+            # 시그널 연결 복구
+            try:
+                self.main_table.itemChanged.connect(self._on_table_item_changed)
+            except TypeError:
+                # 이미 연결되어 있는 경우
+                pass
+            
+            self.logger.info("=== 7열 최적화 속도 업데이트 완료 ===")
+            
+        except Exception as e:
+            self.logger.error(f"최적화 속도 컬럼 업데이트 실패: {e}")
+            # 시그널 연결 복구 (에러 시에도)
+            try:
+                self.main_table.itemChanged.connect(self._on_table_item_changed)
+            except:
+                pass
+    
     def _check_and_calculate_auto_values(self):
         """사용자 입력 데이터가 완성된 구간별로 자동 계산 실행"""
         try:
@@ -833,6 +1008,7 @@ class TableWindow(QMainWindow):
                 if start_frame and end_frame and distance:
                     self._calculate_segment_time_values(row)
                     self._calculate_segment_velocity_values(row)
+                    self._calculate_segment_acc_time_values(row)  # 6열 가속도 시간 계산 추가
                     self.logger.debug(f"구간 {(row-2)//2 + 1} 자동 계산 완료")
             
         except Exception as e:
@@ -978,34 +1154,44 @@ class TableWindow(QMainWindow):
                         
                     else:
                         # 병합하지 않는 열 (6, 7): 각 행에 개별 값 설정
-                        # Time 행 (짝수행)
+                        # Time 행 (윗셀 - 구간 시작)
                         time_value = ""
                         if col == 6:
                             time_value = str(segment.get('acc_time', ''))
+                        elif col == 7:
+                            # 7열 윗셀: 최적화 속도 (구간 시작점) - 임시 빈값으로 설정 (나중에 그래프 데이터로 업데이트)
+                            time_value = ""
                         
                         time_item = QTableWidgetItem(time_value)
                         time_item.setTextAlignment(Qt.AlignCenter)
                         
                         # 색상 규칙 적용
-                        # 6열: 모든 행 색상 없음
-                        # 7열: 모든 행 색상 적용
-                        if col == 7:  # acc_velocity는 모든 행 색상
+                        # 6열: 자동 계산 색상 (가속도 적용 시간)
+                        # 7열: 자동 계산 색상 (최적화 속도)
+                        if col == 6:  # acc_time은 자동 계산
+                            time_item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
+                        elif col == 7:  # acc_velocity는 자동 계산 (최적화 그래프 연동)
                             time_item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
                         
                         self.main_table.setItem(segment_start_row, col, time_item)
                         
-                        # Vel 행 (홀수행)
+                        # Vel 행 (아랫셀 - 구간 끝)
                         vel_value = ""
-                        if col == 7:
-                            vel_value = str(segment.get('acc_velocity', ''))
+                        if col == 6:
+                            vel_value = ""  # 6열 아랫셀은 사용하지 않음
+                        elif col == 7:
+                            # 7열 아랫셀: 최적화 속도 (구간 끝점) - 임시 빈값으로 설정 (나중에 그래프 데이터로 업데이트)
+                            vel_value = ""
                         
                         vel_item = QTableWidgetItem(vel_value)
                         vel_item.setTextAlignment(Qt.AlignCenter)
                         
                         # 색상 규칙 적용
-                        # 6열: 모든 행 색상 없음
-                        # 7열: 모든 행 색상 적용
-                        if col == 7:  # acc_velocity (모든 행 색상)
+                        # 6열: 자동 계산 색상 (가속도 적용 시간)
+                        # 7열: 자동 계산 색상 (최적화 속도)
+                        if col == 6:  # acc_time은 자동 계산
+                            vel_item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
+                        elif col == 7:  # acc_velocity는 자동 계산 (최적화 그래프 연동)
                             vel_item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
                         
                         self.main_table.setItem(segment_end_row, col, vel_item)
@@ -1338,34 +1524,44 @@ class TableWindow(QMainWindow):
                     
                 else:
                     # 병합하지 않는 열 (6, 7): 각 행에 개별 값 설정
-                    # Time 행 (짝수행)
+                    # Time 행 (윗셀 - 구간 시작)
                     time_value = ""
                     if col == 6:
                         time_value = str(segment_data.get('acc_time', ''))
+                    elif col == 7:
+                        # 7열 윗셀: 최적화 속도 (구간 시작점) - 임시 빈값으로 설정 (나중에 그래프 데이터로 업데이트)
+                        time_value = ""
                     
                     time_item = QTableWidgetItem(time_value)
                     time_item.setTextAlignment(Qt.AlignCenter)
                     
                     # 색상 규칙 적용
-                    # 6열: 모든 행 색상 없음
-                    # 7열: 모든 행 색상 적용
-                    if col == 7:  # acc_velocity는 모든 행 색상
+                    # 6열: 자동 계산 색상 (가속도 적용 시간)
+                    # 7열: 자동 계산 색상 (최적화 속도)
+                    if col == 6:  # acc_time은 자동 계산
+                        time_item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
+                    elif col == 7:  # acc_velocity는 자동 계산 (최적화 그래프 연동)
                         time_item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
                     
                     self.main_table.setItem(segment_start_row, col, time_item)
                     
-                    # Vel 행 (홀수행)
+                    # Vel 행 (아랫셀 - 구간 끝)
                     vel_value = ""
-                    if col == 7:
-                        vel_value = str(segment_data.get('acc_velocity', ''))
+                    if col == 6:
+                        vel_value = ""  # 6열 아랫셀은 사용하지 않음
+                    elif col == 7:
+                        # 7열 아랫셀: 최적화 속도 (구간 끝점) - 임시 빈값으로 설정 (나중에 그래프 데이터로 업데이트)
+                        vel_value = ""
                     
                     vel_item = QTableWidgetItem(vel_value)
                     vel_item.setTextAlignment(Qt.AlignCenter)
                     
                     # 색상 규칙 적용
-                    # 6열: 모든 행 색상 없음
-                    # 7열: 모든 행 색상 적용
-                    if col == 7:  # acc_velocity (모든 행 색상)
+                    # 6열: 자동 계산 색상 (가속도 적용 시간)
+                    # 7열: 자동 계산 색상 (최적화 속도)
+                    if col == 6:  # acc_time은 자동 계산
+                        vel_item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
+                    elif col == 7:  # acc_velocity는 자동 계산 (최적화 그래프 연동)
                         vel_item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
                     
                     self.main_table.setItem(segment_end_row, col, vel_item)

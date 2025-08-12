@@ -148,6 +148,12 @@ class GraphWindow(QMainWindow):
             self.video_analysis_data = graph_data.get('video_analysis_velocity', [])
             self.ground_truth_data = graph_data.get('ground_truth_velocity', [])
             
+            # 데이터 변경 시 드래그 상태 초기화 (인덱스 오류 방지)
+            if self.dragging:
+                self.dragging = False
+                self.selected_point_index = None
+                self.logger.info("데이터 업데이트로 인한 드래그 상태 초기화")
+            
             self.logger.info(f"수신한 데이터: optimization={len(self.optimization_data)}개, video_analysis={len(self.video_analysis_data)}개")
             
             if self.video_analysis_data:
@@ -230,9 +236,16 @@ class GraphWindow(QMainWindow):
             
             # 드래그 중인 포인트 강조
             if self.dragging and self.selected_point_index is not None:
-                selected_point = self.optimization_data[self.selected_point_index]
-                self.ax.plot(selected_point['time'], selected_point['velocity'],
-                            'ro', markersize=POINT_SIZE * 1.5, zorder=10)
+                # 인덱스 유효성 검사
+                if 0 <= self.selected_point_index < len(self.optimization_data):
+                    selected_point = self.optimization_data[self.selected_point_index]
+                    self.ax.plot(selected_point['time'], selected_point['velocity'],
+                                'ro', markersize=POINT_SIZE * 1.5, zorder=10)
+                else:
+                    # 무효한 인덱스인 경우 드래그 상태 초기화
+                    self.dragging = False
+                    self.selected_point_index = None
+                    self.logger.warning(f"무효한 선택 포인트 인덱스 감지 - 드래그 상태 초기화")
         
         if self.video_analysis_data:
             times = [point['time'] for point in self.video_analysis_data]
