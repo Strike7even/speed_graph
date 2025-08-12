@@ -13,7 +13,9 @@ from PyQt5.QtGui import QColor, QBrush
 
 from utils.constants import (
     DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT,
-    USER_INPUT_COLOR, AUTO_CALCULATION_COLOR, PC_CRASH_INTEGRATION_COLOR
+    USER_INPUT_COLOR, AUTO_CALCULATION_COLOR, PC_CRASH_INTEGRATION_COLOR,
+    ACCELERATION_VALID_CELL_COLOR, ACCELERATION_INVALID_CELL_COLOR, ACCELERATION_UNIFORM_CELL_COLOR,
+    DEFAULT_UNIFORM_MOTION_THRESHOLD
 )
 
 class TableWindow(QMainWindow):
@@ -560,6 +562,12 @@ class TableWindow(QMainWindow):
                 # 자동 계산 실행
                 self._check_and_calculate_auto_values()
                 
+                # 8열(가속도) 값이 변경된 경우 10열 색상 업데이트
+                if col == 8:
+                    # 짝수 행만 처리 (구간 시작 행)
+                    if row % 2 == 0:
+                        self._update_acc_dec_color(row)
+                
                 # 실시간으로 Data Bridge에 업데이트
                 self._collect_and_send_table_data()
         
@@ -635,7 +643,7 @@ class TableWindow(QMainWindow):
             self._show_error_message("데이터 업데이트 오류", f"테이블 업데이트 중 오류가 발생했습니다: {e}")
     
     def _on_graph_data_updated(self, graph_data):
-        """그래프 데이터 업데이트 처리 (초기 생성 시 7열 업데이트용)"""
+        """그래프 데이터 업데이트 처리 (초기 생성 시 7, 8, 9, 10열 업데이트용)"""
         try:
             self.logger.info("=== 테이블: 그래프 데이터 업데이트 수신 ===")
             
@@ -644,8 +652,91 @@ class TableWindow(QMainWindow):
                 self.logger.info("최적화 속도 데이터 감지 - 7열 초기 업데이트 실행")
                 self._update_optimization_velocity_column(graph_data['optimization_velocity'])
             
+            # 8, 9, 10열 자동 계산 실행 (기존 자동 계산 로직 활용)
+            self.logger.info("그래프 생성 완료 - 8, 9, 10열 자동 계산 실행")
+            self._calculate_acc_time_values()  # 6열 가속도 시간
+            
+            # DataBridge에서 계산된 segments 데이터 가져와서 8, 9, 10열 업데이트
+            if self.data_bridge:
+                project_data = self.data_bridge.get_project_data()
+                segments = project_data.get('segments', [])
+                self.logger.info(f"DataBridge에서 {len(segments)}개 구간 데이터 가져옴")
+                self._update_calculated_columns_from_segments(segments)
+            
         except Exception as e:
             self.logger.error(f"그래프 데이터 업데이트 처리 실패: {e}")
+    
+    def _update_calculated_columns_from_segments(self, segments):
+        """DataBridge segments 데이터로부터 8, 9, 10열 업데이트"""
+        try:
+            self.logger.info(f"=== segments 데이터로부터 8, 9, 10열 업데이트 시작 ===")
+            
+            # 시그널 연결 일시 해제 (무한 루프 방지)
+            try:
+                self.main_table.itemChanged.disconnect(self._on_table_item_changed)
+            except TypeError:
+                pass
+            
+            # 각 구간별로 처리
+            for i, segment in enumerate(segments):
+                row = 2 + (i * 2)  # 구간 시작 행 계산
+                
+                if row >= self.main_table.rowCount():
+                    break
+                
+                self.logger.info(f"구간 {i+1} (행 {row}) 업데이트:")
+                self.logger.info(f"  acceleration: {segment.get('acceleration', 'N/A')}")
+                self.logger.info(f"  duration: {segment.get('duration', 'N/A')}")
+                self.logger.info(f"  acc_dec_type: {segment.get('acc_dec_type', 'N/A')}")
+                
+                # 8열: 가속도 (acceleration)
+                acceleration = segment.get('acceleration', 0)
+                if acceleration != 0:  # 계산된 가속도가 있는 경우만
+                    acc_item = self.main_table.item(row, 8)
+                    if acc_item:
+                        acc_item.setText(f"{acceleration:.2f}")
+                        self.logger.info(f"  → 8열 가속도 설정: {acceleration:.2f}")
+                
+                # 9열: 지속시간 (duration)
+                duration = segment.get('duration', 0)
+                if duration != 0:  # 계산된 지속시간이 있는 경우만
+                    duration_item = self.main_table.item(row, 9)
+                    if duration_item:
+                        duration_item.setText(f"{duration:.3f}")
+                        self.logger.info(f"  → 9열 지속시간 설정: {duration:.3f}")
+                
+                # 10열: 가속도 유형 및 색상 (acc_dec_type)
+                acc_dec_type = segment.get('acc_dec_type', '')
+                if acc_dec_type:  # 가속도 유형이 있는 경우만
+                    acc_dec_item = self.main_table.item(row, 10)
+                    if acc_dec_item:
+                        acc_dec_item.setText(acc_dec_type)
+                        
+                        # 색상 설정
+                        if "Valid" in acc_dec_type:
+                            color = ACCELERATION_VALID_CELL_COLOR
+                        elif "Invalid" in acc_dec_type:
+                            color = ACCELERATION_INVALID_CELL_COLOR
+                        elif "Uniform" in acc_dec_type:
+                            color = ACCELERATION_UNIFORM_CELL_COLOR
+                        else:
+                            color = AUTO_CALCULATION_COLOR
+                        
+                        acc_dec_item.setBackground(QBrush(QColor(color)))
+                        self.logger.info(f"  → 10열 가속도 유형 설정: {acc_dec_type} (색상: {color})")
+            
+            # 시그널 재연결
+            self.main_table.itemChanged.connect(self._on_table_item_changed)
+            
+            self.logger.info("=== segments 데이터 업데이트 완료 ===")
+            
+        except Exception as e:
+            self.logger.error(f"segments 데이터 업데이트 실패: {e}")
+            # 시그널 재연결 (에러 시에도)
+            try:
+                self.main_table.itemChanged.connect(self._on_table_item_changed)
+            except:
+                pass
     
     # === 자동 계산 메서드 ===
     
@@ -987,6 +1078,70 @@ class TableWindow(QMainWindow):
             except:
                 pass
     
+    def _update_acc_dec_color(self, row):
+        """10열 가속도/감속도 유효성 색상 업데이트"""
+        try:
+            # 8열 가속도 값 가져오기
+            acc_value = self._get_cell_value(row, 8)
+            if not acc_value:
+                return
+            
+            try:
+                acceleration = float(acc_value)
+            except:
+                return
+            
+            # FPS 테이블에서 가속도 한계값 가져오기
+            max_acc_value = self._get_cell_value_from_table(self.fps_table, 1, 1)
+            max_dec_value = self._get_cell_value_from_table(self.fps_table, 2, 1)
+            
+            max_acc = float(max_acc_value) if max_acc_value else 3.5
+            max_dec = float(max_dec_value) if max_dec_value else -7.85
+            
+            # 가속도 유효성 판단 및 텍스트/색상 설정
+            uniform_threshold = DEFAULT_UNIFORM_MOTION_THRESHOLD  # 추후 옵션으로 확장 가능
+            
+            if abs(acceleration) <= uniform_threshold:
+                # 등속 구간 (임계값 이하)
+                text = "Const (Uniform)"
+                color = ACCELERATION_UNIFORM_CELL_COLOR
+            elif acceleration > uniform_threshold:
+                # 가속 구간
+                if acceleration <= max_acc:
+                    # Valid 가속
+                    text = "Acc (Valid)"
+                    color = ACCELERATION_VALID_CELL_COLOR
+                else:
+                    # Invalid 가속
+                    text = "Acc (Invalid)"
+                    color = ACCELERATION_INVALID_CELL_COLOR
+            else:  # acceleration < -uniform_threshold
+                # 감속 구간
+                if acceleration >= max_dec:
+                    # Valid 감속
+                    text = "Dec (Valid)"
+                    color = ACCELERATION_VALID_CELL_COLOR
+                else:
+                    # Invalid 감속
+                    text = "Dec (Invalid)"
+                    color = ACCELERATION_INVALID_CELL_COLOR
+            
+            # 10열 아이템 가져오기 또는 생성
+            item_10 = self.main_table.item(row, 10)
+            if not item_10:
+                item_10 = QTableWidgetItem(text)
+                item_10.setTextAlignment(Qt.AlignCenter)
+                self.main_table.setItem(row, 10, item_10)
+                self.main_table.setSpan(row, 10, 2, 1)
+            else:
+                item_10.setText(text)
+            
+            # 색상 적용
+            item_10.setBackground(QBrush(QColor(color)))
+                
+        except Exception as e:
+            self.logger.error(f"가속도 색상 업데이트 실패: {e}")
+    
     def _check_and_calculate_auto_values(self):
         """사용자 입력 데이터가 완성된 구간별로 자동 계산 실행"""
         try:
@@ -1133,9 +1288,18 @@ class TableWindow(QMainWindow):
                         elif col == 8:
                             value = str(segment.get('acceleration', ''))
                         elif col == 9:
-                            value = str(segment.get('duration', ''))
+                            duration_val = segment.get('duration', '')
+                            if duration_val and duration_val != '':
+                                try:
+                                    value = f"{float(duration_val):.3f}"
+                                except:
+                                    value = str(duration_val)
+                            else:
+                                value = ''
                         elif col == 10:
-                            value = str(segment.get('acc_dec_type', ''))
+                            acc_dec_type = segment.get('acc_dec_type', '')
+                            # 텍스트와 색상을 동시에 표시
+                            value = str(acc_dec_type)
                         
                         item = QTableWidgetItem(value)
                         item.setTextAlignment(Qt.AlignCenter)
@@ -1145,7 +1309,18 @@ class TableWindow(QMainWindow):
                             item.setBackground(QBrush(QColor(USER_INPUT_COLOR)))
                         elif col == 3:  # PC-Crash 연동
                             item.setBackground(QBrush(QColor(PC_CRASH_INTEGRATION_COLOR)))
-                        elif col in [4, 5, 9, 10]:  # 자동 계산
+                        elif col == 9:  # Duration 자동 계산
+                            item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
+                        elif col == 10:  # Acc/Dec/Const 유효성 색상 표시
+                            if 'Uniform' in acc_dec_type:
+                                item.setBackground(QBrush(QColor(ACCELERATION_UNIFORM_CELL_COLOR)))
+                            elif 'Valid' in acc_dec_type:
+                                item.setBackground(QBrush(QColor(ACCELERATION_VALID_CELL_COLOR)))
+                            elif 'Invalid' in acc_dec_type:
+                                item.setBackground(QBrush(QColor(ACCELERATION_INVALID_CELL_COLOR)))
+                            else:
+                                item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
+                        elif col in [4, 5]:  # 기타 자동 계산
                             item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
                         
                         self.main_table.setItem(segment_start_row, col, item)
@@ -1503,9 +1678,18 @@ class TableWindow(QMainWindow):
                     elif col == 8:
                         value = str(segment_data.get('acceleration', ''))
                     elif col == 9:
-                        value = str(segment_data.get('duration', ''))
+                        duration_val = segment_data.get('duration', '')
+                        if duration_val and duration_val != '':
+                            try:
+                                value = f"{float(duration_val):.3f}"
+                            except:
+                                value = str(duration_val)
+                        else:
+                            value = ''
                     elif col == 10:
-                        value = str(segment_data.get('acc_dec_type', ''))
+                        acc_dec_type = segment_data.get('acc_dec_type', '')
+                        # 텍스트와 색상을 동시에 표시
+                        value = str(acc_dec_type)
                     
                     item = QTableWidgetItem(value)
                     item.setTextAlignment(Qt.AlignCenter)
@@ -1515,7 +1699,18 @@ class TableWindow(QMainWindow):
                         item.setBackground(QBrush(QColor(USER_INPUT_COLOR)))
                     elif col == 3:  # PC-Crash 연동
                         item.setBackground(QBrush(QColor(PC_CRASH_INTEGRATION_COLOR)))
-                    elif col in [4, 5, 9, 10]:  # 자동 계산
+                    elif col == 9:  # Duration 자동 계산
+                        item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
+                    elif col == 10:  # Acc/Dec/Const 유효성 색상 표시
+                        if 'Uniform' in acc_dec_type:
+                            item.setBackground(QBrush(QColor(ACCELERATION_UNIFORM_CELL_COLOR)))
+                        elif 'Valid' in acc_dec_type:
+                            item.setBackground(QBrush(QColor(ACCELERATION_VALID_CELL_COLOR)))
+                        elif 'Invalid' in acc_dec_type:
+                            item.setBackground(QBrush(QColor(ACCELERATION_INVALID_CELL_COLOR)))
+                        else:
+                            item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
+                    elif col in [4, 5]:  # 기타 자동 계산
                         item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
                     
                     self.main_table.setItem(segment_start_row, col, item)

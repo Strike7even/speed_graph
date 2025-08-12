@@ -10,7 +10,7 @@ from PyQt5.QtCore import QObject, pyqtSignal
 
 from utils.constants import (
     DEFAULT_MAX_ACCELERATION, DEFAULT_MAX_DECELERATION,
-    DEFAULT_SEGMENTS, DEFAULT_FPS
+    DEFAULT_SEGMENTS, DEFAULT_FPS, DEFAULT_UNIFORM_MOTION_THRESHOLD
 )
 
 class DataBridge(QObject):
@@ -200,8 +200,13 @@ class DataBridge(QObject):
             self._project_data['graph_data']['optimization_velocity'] = optimization_velocity
             self._project_data['graph_data']['video_analysis_velocity'] = video_analysis_velocity
             
-            # 테이블에서 계산된 값들 업데이트
+            # 테이블에서 계산된 값들 업데이트 (duration, avg_velocity 등)
             self._update_calculated_values()
+            
+            # 최적화 데이터가 생성되었으므로 가속도 값들 계산
+            if optimization_velocity:
+                self.logger.info("최적화 데이터 기반 가속도 계산 실행")
+                self._update_table_from_optimization_data()
             
             self.logger.info(f"=== 그래프 데이터 계산 완료 ===")
             self.logger.info(f"Optimization 포인트: {len(optimization_velocity)}개")
@@ -340,20 +345,26 @@ class DataBridge(QObject):
                 
                 # 가속도 검증
                 acceleration = self._parse_float(segment.get('acceleration', 0))
-                if acceleration != 0:
-                    acc_dec_type = ""
-                    if acceleration > 0:
-                        if acceleration <= max_acc:
-                            acc_dec_type = "Acc (Valid)"
-                        else:
-                            acc_dec_type = "Acc (Invalid)"
+                uniform_threshold = DEFAULT_UNIFORM_MOTION_THRESHOLD  # 추후 옵션으로 확장 가능
+                
+                acc_dec_type = ""
+                if abs(acceleration) <= uniform_threshold:
+                    # 등속 구간 (임계값 이하)
+                    acc_dec_type = "Const (Uniform)"
+                elif acceleration > uniform_threshold:
+                    # 가속 구간
+                    if acceleration <= max_acc:
+                        acc_dec_type = "Acc (Valid)"
                     else:
-                        if acceleration >= max_dec:
-                            acc_dec_type = "Dec (Valid)"
-                        else:
-                            acc_dec_type = "Dec (Invalid)"
-                    
-                    segment['acc_dec_type'] = acc_dec_type
+                        acc_dec_type = "Acc (Invalid)"
+                else:  # acceleration < -uniform_threshold
+                    # 감속 구간
+                    if acceleration >= max_dec:
+                        acc_dec_type = "Dec (Valid)"
+                    else:
+                        acc_dec_type = "Dec (Invalid)"
+                
+                segment['acc_dec_type'] = acc_dec_type
                 
             self.logger.debug("계산된 값 업데이트 완료")
             
@@ -423,13 +434,19 @@ class DataBridge(QObject):
                             # 가속도 유효성 검증
                             max_acc = self._project_data['settings']['max_acceleration']
                             max_dec = self._project_data['settings']['max_deceleration']
+                            uniform_threshold = DEFAULT_UNIFORM_MOTION_THRESHOLD
                             
-                            if acceleration > 0:
+                            if abs(acceleration) <= uniform_threshold:
+                                # 등속 구간
+                                segment['acc_dec_type'] = "Const (Uniform)"
+                            elif acceleration > uniform_threshold:
+                                # 가속 구간
                                 if acceleration <= max_acc:
                                     segment['acc_dec_type'] = "Acc (Valid)"
                                 else:
                                     segment['acc_dec_type'] = "Acc (Invalid)"
-                            else:
+                            else:  # acceleration < -uniform_threshold
+                                # 감속 구간
                                 if acceleration >= max_dec:
                                     segment['acc_dec_type'] = "Dec (Valid)"
                                 else:
