@@ -419,7 +419,10 @@ class DataBridge(QObject):
                     final_velocity = last_point['velocity']
                     
                     # 가속도가 있는 경우
-                    if abs(final_velocity - initial_velocity) > 0.1:  # 0.1 km/h 임계값
+                    vel_diff = abs(final_velocity - initial_velocity)
+                    self.logger.info(f"구간 {i+1} 가속도 분석: 초기속도={initial_velocity:.2f}, 최종속도={final_velocity:.2f}, 속도차이={vel_diff:.2f} km/h")
+                    
+                    if vel_diff > 0.1:  # 0.1 km/h 임계값
                         # 가속도 계산
                         time_diff = last_point['time'] - first_point['time']
                         if time_diff > 0:
@@ -452,11 +455,21 @@ class DataBridge(QObject):
                                 else:
                                     segment['acc_dec_type'] = "Dec (Invalid)"
                     else:
-                        # 일정 속도 유지
+                        # 일정 속도 유지 (등속구간)
+                        time_diff = last_point['time'] - first_point['time']
                         segment['acceleration'] = 0.0
-                        segment['acc_time'] = 0.0
+                        segment['acc_time'] = round(time_diff, 3)  # 실제 구간 지속시간
                         segment['acc_velocity'] = round(initial_velocity, 2)
-                        segment['acc_dec_type'] = ""
+                        
+                        # 등속구간 유효성 검증
+                        uniform_threshold = DEFAULT_UNIFORM_MOTION_THRESHOLD
+                        segment['acc_dec_type'] = "Const (Uniform)"
+                        
+                        self.logger.info(f"구간 {i+1} 등속구간 처리 완료:")
+                        self.logger.info(f"  acceleration: {segment['acceleration']}")
+                        self.logger.info(f"  acc_time: {segment['acc_time']}")
+                        self.logger.info(f"  acc_velocity: {segment['acc_velocity']}")
+                        self.logger.info(f"  acc_dec_type: {segment['acc_dec_type']}")
             
             self.logger.debug("테이블 역산 완료")
             
