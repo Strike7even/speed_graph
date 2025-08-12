@@ -685,21 +685,33 @@ class TableWindow(QMainWindow):
                     break
                 
                 self.logger.info(f"구간 {i+1} (행 {row}) 업데이트:")
-                self.logger.info(f"  acceleration: {segment.get('acceleration', 'N/A')}")
-                self.logger.info(f"  duration: {segment.get('duration', 'N/A')}")
-                self.logger.info(f"  acc_dec_type: {segment.get('acc_dec_type', 'N/A')}")
+                self.logger.info(f"  acceleration: {segment.get('acceleration', 'N/A')} (type: {type(segment.get('acceleration'))})")
+                self.logger.info(f"  duration: {segment.get('duration', 'N/A')} (type: {type(segment.get('duration'))})")
+                self.logger.info(f"  acc_dec_type: {segment.get('acc_dec_type', 'N/A')} (type: {type(segment.get('acc_dec_type'))})")
                 
                 # 8열: 가속도 (acceleration)
-                acceleration = segment.get('acceleration', 0)
-                if acceleration != 0:  # 계산된 가속도가 있는 경우만
-                    acc_item = self.main_table.item(row, 8)
-                    if acc_item:
-                        acc_item.setText(f"{acceleration:.2f}")
-                        self.logger.info(f"  → 8열 가속도 설정: {acceleration:.2f}")
+                acceleration = segment.get('acceleration', None)
+                self.logger.info(f"  → 8열 가속도 값 확인: {acceleration} (type: {type(acceleration)})")
+                
+                # 계산된 가속도가 있는 경우 (빈 문자열 제외, 0.0 포함)
+                if acceleration is not None and acceleration != "":
+                    try:
+                        # 문자열이면 float으로 변환
+                        if isinstance(acceleration, str):
+                            acceleration = float(acceleration)
+                        
+                        acc_item = self.main_table.item(row, 8)
+                        if acc_item:
+                            acc_item.setText(f"{acceleration:.2f}")
+                            self.logger.info(f"  → 8열 가속도 설정 성공: {acceleration:.2f}")
+                    except (ValueError, TypeError) as e:
+                        self.logger.error(f"  → 8열 가속도 설정 실패: {e}")
+                else:
+                    self.logger.info(f"  → 8열 가속도 값이 없어서 설정하지 않음: acceleration={acceleration}")
                 
                 # 9열: 지속시간 (duration)
-                duration = segment.get('duration', 0)
-                if duration != 0:  # 계산된 지속시간이 있는 경우만
+                duration = segment.get('duration', None)
+                if duration is not None:  # 계산된 지속시간이 있는 경우 (0 포함, 하지만 실제로는 0이면 안됨)
                     duration_item = self.main_table.item(row, 9)
                     if duration_item:
                         duration_item.setText(f"{duration:.3f}")

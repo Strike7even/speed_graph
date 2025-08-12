@@ -434,6 +434,11 @@ class DataBridge(QObject):
                             segment['acc_time'] = round(time_diff, 3)
                             segment['acc_velocity'] = round(final_velocity, 2)
                             
+                            self.logger.info(f"구간 {i+1} 가속구간 처리 완료:")
+                            self.logger.info(f"  acceleration: {segment['acceleration']}")
+                            self.logger.info(f"  acc_time: {segment['acc_time']}")
+                            self.logger.info(f"  acc_velocity: {segment['acc_velocity']}")
+                            
                             # 가속도 유효성 검증
                             max_acc = self._project_data['settings']['max_acceleration']
                             max_dec = self._project_data['settings']['max_deceleration']
