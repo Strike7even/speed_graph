@@ -4,7 +4,6 @@ DataBridge - 데이터 통신 허브
 """
 
 import json
-import logging
 from typing import Dict, List, Optional, Any
 from PyQt5.QtCore import QObject, pyqtSignal
 
@@ -24,7 +23,6 @@ class DataBridge(QObject):
     
     def __init__(self):
         super().__init__()
-        self.logger = logging.getLogger(__name__)
         
         # 연결된 윈도우 참조
         self.table_window = None
@@ -34,7 +32,7 @@ class DataBridge(QObject):
         self._project_data = self._initialize_project_data()
         self._unsaved_changes = False
         
-        self.logger.info("DataBridge 초기화 완료")
+
     
     def _initialize_project_data(self) -> Dict[str, Any]:
         """프로젝트 데이터 초기화"""
@@ -82,21 +80,22 @@ class DataBridge(QObject):
         """윈도우 참조 설정"""
         self.table_window = table_window
         self.graph_window = graph_window
-        self.logger.info("윈도우 참조 설정 완료")
+
     
     # === 데이터 동기화 메서드 ===
     
     def update_from_table(self, table_data: Dict[str, Any]):
         """테이블에서 데이터 업데이트"""
         try:
-            self.logger.info("=== DataBridge: 테이블 데이터 수신 ===")
+
             
             # 세그먼트 데이터 업데이트
             if 'segments' in table_data:
                 segments = table_data['segments']
-                self.logger.info(f"받은 구간 수: {len(segments)}")
+
                 for i, segment in enumerate(segments):
-                    self.logger.info(f"DataBridge 구간 {i+1}: avg_velocity={segment.get('avg_velocity')}, avg_time={segment.get('avg_time')}")
+                    pass
+
                 self._project_data['segments'] = table_data['segments']
             
             # 설정 데이터 업데이트
@@ -112,16 +111,16 @@ class DataBridge(QObject):
             # 그래프 윈도우에 업데이트 알림
             self.graph_data_updated.emit(self._project_data['graph_data'])
             
-            self.logger.debug("테이블 데이터 업데이트 완료")
+
             
         except Exception as e:
-            self.logger.error(f"테이블 데이터 업데이트 실패: {e}")
+            pass
             self.error_occurred.emit(f"테이블 데이터 업데이트 중 오류: {e}")
     
     def update_from_graph(self, graph_data: Dict[str, Any]):
         """그래프에서 데이터 업데이트"""
         try:
-            self.logger.debug("그래프 데이터 업데이트 시작")
+
             
             # 최적화 속도 데이터 업데이트
             if 'optimization_velocity' in graph_data:
@@ -136,16 +135,16 @@ class DataBridge(QObject):
             # 테이블 윈도우에 업데이트 알림
             self.table_data_updated.emit({'segments': self._project_data['segments']})
             
-            self.logger.debug("그래프 데이터 업데이트 완료")
+
             
         except Exception as e:
-            self.logger.error(f"그래프 데이터 업데이트 실패: {e}")
+            pass
             self.error_occurred.emit(f"그래프 데이터 업데이트 중 오류: {e}")
     
     def _calculate_graph_data(self):
         """테이블 데이터를 기반으로 그래프 데이터 계산"""
         try:
-            self.logger.info("=== DataBridge: 그래프 데이터 계산 시작 ===")
+
             
             # 기존 최적화 속도 데이터 초기화
             optimization_velocity = []
@@ -155,7 +154,7 @@ class DataBridge(QObject):
             fps = self._project_data['settings']['fps']
             
             segments = self._project_data['segments']
-            self.logger.info(f"처리할 구간 수: {len(segments)}")
+
             
             for i, segment in enumerate(segments):
                 # 구간 데이터 추출
@@ -165,8 +164,8 @@ class DataBridge(QObject):
                 avg_time = self._parse_float(segment.get('avg_time', 0))
                 avg_velocity = self._parse_float(segment.get('avg_velocity', 0))
                 
-                self.logger.info(f"구간 {i+1}: frame_start={frame_start}, frame_end={frame_end}, distance={distance}")
-                self.logger.info(f"        avg_time={avg_time}, avg_velocity={avg_velocity}")
+
+
                 acc_time = self._parse_float(segment.get('acc_time', 0))
                 acc_velocity = self._parse_float(segment.get('acc_velocity', 0))
                 acceleration = self._parse_float(segment.get('acceleration', 0))
@@ -177,7 +176,7 @@ class DataBridge(QObject):
                     segment_duration = (frame_end - frame_start) / fps
                     avg_velocity_ms = avg_velocity / 3.6 if avg_velocity > 0 else 0  # km/h → m/s
                     
-                    self.logger.info(f"구간 {i+1} 처리: duration={segment_duration:.3f}초, fps={fps}")
+
                     
                     # Video Analysis 데이터 (계단식)
                     if avg_velocity > 0:
@@ -187,9 +186,9 @@ class DataBridge(QObject):
                         video_analysis_velocity.append(point1)
                         video_analysis_velocity.append(point2)
                         
-                        self.logger.info(f"Video Analysis 포인트 추가: ({current_time:.3f}, {avg_velocity}) ({current_time + segment_duration:.3f}, {avg_velocity})")
+
                     else:
-                        self.logger.warning(f"구간 {i+1}: avg_velocity가 0이므로 그래프 포인트 생성 안됨")
+                        pass
                     
                     current_time += segment_duration
             
@@ -205,28 +204,29 @@ class DataBridge(QObject):
             
             # 최적화 데이터가 생성되었으므로 가속도 값들 계산
             if optimization_velocity:
-                self.logger.info("최적화 데이터 기반 가속도 계산 실행")
+
                 self._update_table_from_optimization_data()
             
-            self.logger.info(f"=== 그래프 데이터 계산 완료 ===")
-            self.logger.info(f"Optimization 포인트: {len(optimization_velocity)}개")
-            self.logger.info(f"Video Analysis 포인트: {len(video_analysis_velocity)}개")
+
+
+
             
             if video_analysis_velocity:
-                self.logger.info("Video Analysis 첫 번째 포인트들:")
+
                 for i, point in enumerate(video_analysis_velocity[:4]):
-                    self.logger.info(f"  포인트 {i+1}: time={point['time']:.3f}, velocity={point['velocity']}")
+                    pass
+
             else:
-                self.logger.warning("Video Analysis 데이터가 비어있음!")
+                pass
             
         except Exception as e:
-            self.logger.error(f"그래프 데이터 계산 실패: {e}")
+            pass
             self.error_occurred.emit(f"그래프 데이터 계산 중 오류: {e}")
     
     def _generate_optimization_velocity(self, segments, fps):
         """새로운 Optimization Velocity 알고리즘: 1/2 지점 중간점 기반 직선 연결"""
         try:
-            self.logger.info("=== Optimization Velocity 생성 시작 (1/2 지점 알고리즘) ===")
+
             
             optimization_velocity = []
             current_time = 0.0
@@ -270,8 +270,8 @@ class DataBridge(QObject):
                         # 음수 속도 방지
                         end_velocity = max(0, end_velocity)
                         
-                        self.logger.info(f"구간 {i+1}: 시작={start_velocity:.2f}, 중간={mid_velocity:.2f}, 끝={end_velocity:.2f} km/h")
-                        self.logger.info(f"        시간: {start_time:.3f}~{end_time:.3f}초, 기울기={slope:.3f}")
+
+
                         
                         # 포인트 생성: 시작점과 끝점만 (중간점은 계산용으로만 사용)
                         optimization_velocity.append({
@@ -288,24 +288,22 @@ class DataBridge(QObject):
                         previous_end_velocity = end_velocity
                         
                     else:
-                        self.logger.warning(f"구간 {i+1}: 시간 차이가 0이므로 건너뜀")
+
                         previous_end_velocity = avg_velocity
                     
                     current_time += segment_duration
                 else:
-                    self.logger.warning(f"구간 {i+1}: 필수 데이터 누락 또는 무효 (frame_start={frame_start}, frame_end={frame_end}, avg_velocity={avg_velocity})")
-            
-            self.logger.info(f"Optimization Velocity 생성 완료: {len(optimization_velocity)}개 포인트")
+                    pass
             
             if optimization_velocity:
-                self.logger.info("Optimization 첫 번째 포인트들:")
+
                 for i, point in enumerate(optimization_velocity[:6]):
-                    self.logger.info(f"  포인트 {i+1}: time={point['time']:.3f}, velocity={point['velocity']:.2f}")
+                    pass
             
             return optimization_velocity
             
         except Exception as e:
-            self.logger.error(f"Optimization Velocity 생성 실패: {e}")
+            pass
             return []
     
     def _parse_float(self, value, default=0.0):
@@ -327,6 +325,16 @@ class DataBridge(QObject):
             max_dec = self._project_data['settings']['max_deceleration']
             
             for segment in self._project_data['segments']:
+                # 7-10열 계산 값 초기화 (테이블에서 전송되지 않으므로 기본값 설정)
+                if 'acc_velocity' not in segment:
+                    segment['acc_velocity'] = 0.0
+                if 'acceleration' not in segment:
+                    segment['acceleration'] = 0.0
+                if 'duration' not in segment:
+                    segment['duration'] = 0.0
+                if 'acc_dec_type' not in segment:
+                    segment['acc_dec_type'] = ""
+                
                 # 프레임 정보가 있는 경우 duration 계산
                 frame_start = self._parse_float(segment.get('frame_start', 0))
                 frame_end = self._parse_float(segment.get('frame_end', 0))
@@ -343,9 +351,9 @@ class DataBridge(QObject):
                         segment['avg_velocity'] = round(avg_velocity_kmh, 2)
                         segment['avg_time'] = round(duration, 3)
                 
-                # 가속도 검증
+                # 가속도 검증 (기본값 0 사용)
                 acceleration = self._parse_float(segment.get('acceleration', 0))
-                uniform_threshold = DEFAULT_UNIFORM_MOTION_THRESHOLD  # 추후 옵션으로 확장 가능
+                uniform_threshold = DEFAULT_UNIFORM_MOTION_THRESHOLD
                 
                 acc_dec_type = ""
                 if abs(acceleration) <= uniform_threshold:
@@ -366,15 +374,15 @@ class DataBridge(QObject):
                 
                 segment['acc_dec_type'] = acc_dec_type
                 
-            self.logger.debug("계산된 값 업데이트 완료")
+
             
         except Exception as e:
-            self.logger.error(f"계산된 값 업데이트 실패: {e}")
+            pass
     
     def _update_table_from_optimization_data(self):
         """최적화된 그래프 데이터를 기반으로 테이블 업데이트"""
         try:
-            self.logger.debug("그래프 데이터로부터 테이블 역산 시작")
+
             
             optimization_data = self._project_data['graph_data'].get('optimization_velocity', [])
             if not optimization_data:
@@ -420,7 +428,7 @@ class DataBridge(QObject):
                     
                     # 가속도가 있는 경우
                     vel_diff = abs(final_velocity - initial_velocity)
-                    self.logger.info(f"구간 {i+1} 가속도 분석: 초기속도={initial_velocity:.2f}, 최종속도={final_velocity:.2f}, 속도차이={vel_diff:.2f} km/h")
+
                     
                     if vel_diff > 0.1:  # 0.1 km/h 임계값
                         # 가속도 계산
@@ -434,10 +442,7 @@ class DataBridge(QObject):
                             segment['acc_time'] = round(time_diff, 3)
                             segment['acc_velocity'] = round(final_velocity, 2)
                             
-                            self.logger.info(f"구간 {i+1} 가속구간 처리 완료:")
-                            self.logger.info(f"  acceleration: {segment['acceleration']}")
-                            self.logger.info(f"  acc_time: {segment['acc_time']}")
-                            self.logger.info(f"  acc_velocity: {segment['acc_velocity']}")
+
                             
                             # 가속도 유효성 검증
                             max_acc = self._project_data['settings']['max_acceleration']
@@ -470,16 +475,12 @@ class DataBridge(QObject):
                         uniform_threshold = DEFAULT_UNIFORM_MOTION_THRESHOLD
                         segment['acc_dec_type'] = "Const (Uniform)"
                         
-                        self.logger.info(f"구간 {i+1} 등속구간 처리 완료:")
-                        self.logger.info(f"  acceleration: {segment['acceleration']}")
-                        self.logger.info(f"  acc_time: {segment['acc_time']}")
-                        self.logger.info(f"  acc_velocity: {segment['acc_velocity']}")
-                        self.logger.info(f"  acc_dec_type: {segment['acc_dec_type']}")
+
             
-            self.logger.debug("테이블 역산 완료")
+
             
         except Exception as e:
-            self.logger.error(f"테이블 역산 실패: {e}")
+            pass
     
     # === Ground Truth 데이터 처리 ===
     
@@ -509,11 +510,11 @@ class DataBridge(QObject):
             # 그래프 업데이트 알림
             self.graph_data_updated.emit(self._project_data['graph_data'])
             
-            self.logger.info(f"Ground Truth 파일 로드 완료: {filepath}")
+
             return True
             
         except Exception as e:
-            self.logger.error(f"Ground Truth 파일 로드 실패: {e}")
+            pass
             self.error_occurred.emit(f"Ground Truth 파일 로드 중 오류: {e}")
             return False
     
@@ -543,12 +544,12 @@ class DataBridge(QObject):
                 json.dump(self._project_data, f, ensure_ascii=False, indent=2)
             
             self._unsaved_changes = False
-            self.logger.info(f"프로젝트 저장 완료: {filepath}")
+
             return True
             
         except Exception as e:
-            self.logger.error(f"프로젝트 저장 실패: {e}")
-            self.error_occurred.emit(f"프로젝트 저장 중 오류: {e}")
+            pass
+            self.error_occurred.emit(f"프로젝트 저장 중 오륙: {e}")
             return False
     
     def load_project(self, filepath: str) -> bool:
@@ -564,11 +565,11 @@ class DataBridge(QObject):
             self.table_data_updated.emit(self._project_data['segments'])
             self.graph_data_updated.emit(self._project_data['graph_data'])
             
-            self.logger.info(f"프로젝트 로드 완료: {filepath}")
+
             return True
             
         except Exception as e:
-            self.logger.error(f"프로젝트 로드 실패: {e}")
+            pass
             self.error_occurred.emit(f"프로젝트 로드 중 오류: {e}")
             return False
     
@@ -577,13 +578,13 @@ class DataBridge(QObject):
     def fetch_distance_data(self) -> bool:
         """PC-Crash에서 거리 데이터 가져오기"""
         # TODO: Phase 6에서 구현
-        self.logger.info("PC-Crash 거리 데이터 가져오기 요청")
+
         return True
     
     def send_simulation_data(self) -> bool:
         """PC-Crash로 시뮬레이션 데이터 전송"""
         # TODO: Phase 6에서 구현
-        self.logger.info("PC-Crash 시뮬레이션 데이터 전송 요청")
+
         return True
     
     # === 유틸리티 메서드 ===
@@ -604,8 +605,7 @@ class DataBridge(QObject):
         """설정 업데이트"""
         self._project_data['settings'].update(settings)
         self._unsaved_changes = True
-        self.logger.info("설정 업데이트 완료")
+
     
     def cleanup(self):
         """리소스 정리"""
-        self.logger.info("DataBridge 리소스 정리")

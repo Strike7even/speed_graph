@@ -3,7 +3,6 @@ TableWindow - 테이블 윈도우
 데이터 입력 및 관리 인터페이스
 """
 
-import logging
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, 
     QTableWidgetItem, QPushButton, QLabel, QMessageBox, QApplication
@@ -27,14 +26,11 @@ class TableWindow(QMainWindow):
     
     def __init__(self, data_bridge):
         super().__init__()
-        self.logger = logging.getLogger(__name__)
         self.data_bridge = data_bridge
         
         # UI 초기화
         self._setup_ui()
         self._connect_signals()
-        
-        self.logger.info("TableWindow 초기화 완료")
     
     def _setup_ui(self):
         """UI 설정"""
@@ -396,10 +392,9 @@ class TableWindow(QMainWindow):
             # 구간 추가 후 그래프 업데이트를 위해 데이터 전송
             self._collect_and_send_table_data()
             
-            self.logger.info(f"구간 {segment_num} 추가 완료")
             
         except Exception as e:
-            self.logger.error(f"구간 추가 실패: {e}")
+            pass
             self._show_error_message("구간 추가 오류", f"구간 추가 중 오류가 발생했습니다:\n{e}")
     
     def _remove_segment(self):
@@ -431,10 +426,10 @@ class TableWindow(QMainWindow):
             # 구간 삭제 후 그래프 업데이트를 위해 데이터 전송
             self._collect_and_send_table_data()
             
-            self.logger.info(f"구간 {segment_num} 제거 완료")
+
             
         except Exception as e:
-            self.logger.error(f"구간 제거 실패: {e}")
+            pass
             self._show_error_message("구간 제거 오류", f"구간 제거 중 오류가 발생했습니다:\n{e}")
     
     def _fetch_distance_data(self):
@@ -481,14 +476,14 @@ class TableWindow(QMainWindow):
                     success = self.data_bridge.save_project(file_path)
                     if success:
                         self._show_info_message("저장 완료", f"프로젝트가 저장되었습니다:\n{file_path}")
-                        self.logger.info(f"프로젝트 저장 완료: {file_path}")
+
                     else:
                         self._show_error_message("저장 실패", "프로젝트 저장에 실패했습니다.")
                 else:
                     self._show_error_message("저장 오류", "Data Bridge가 연결되지 않았습니다.")
             
         except Exception as e:
-            self.logger.error(f"프로젝트 저장 중 오류: {e}")
+            pass
             self._show_error_message("저장 오류", f"프로젝트 저장 중 오류가 발생했습니다:\n{e}")
     
     def _load_project(self):
@@ -524,20 +519,20 @@ class TableWindow(QMainWindow):
                         # 테이블에 로드된 데이터 표시
                         self._refresh_table_from_data()
                         self._show_info_message("불러오기 완료", f"프로젝트를 불러왔습니다:\n{file_path}")
-                        self.logger.info(f"프로젝트 불러오기 완료: {file_path}")
+
                     else:
                         self._show_error_message("불러오기 실패", "프로젝트 불러오기에 실패했습니다.")
                 else:
                     self._show_error_message("불러오기 오류", "Data Bridge가 연결되지 않았습니다.")
             
         except Exception as e:
-            self.logger.error(f"프로젝트 불러오기 중 오류: {e}")
+            pass
             self._show_error_message("불러오기 오류", f"프로젝트 불러오기 중 오류가 발생했습니다:\n{e}")
     
     def _open_settings(self):
         """설정 열기"""
         # TODO: Phase 5에서 설정 다이얼로그 구현
-        self.logger.info("설정 열기 요청")
+
     
     # === 데이터 업데이트 핸들러 ===
     
@@ -553,7 +548,7 @@ class TableWindow(QMainWindow):
             
             # 사용자 입력 가능한 셀만 처리
             if col in [1, 2, 3, 8]:  # frame_start, frame_end, distance, acceleration
-                self.logger.debug(f"테이블 셀 변경: ({row}, {col}) = {item.text()}")
+
                 
                 # END 프레임 변경 시 다음 구간 START 프레임 자동 업데이트
                 if col == 2:  # frame_end 변경
@@ -572,7 +567,7 @@ class TableWindow(QMainWindow):
                 self._collect_and_send_table_data()
         
         except Exception as e:
-            self.logger.error(f"테이블 아이템 변경 처리 실패: {e}")
+            pass
     
     def _auto_fill_next_segment_start(self, current_row, end_frame_value):
         """다음 구간의 START 프레임 자동 입력"""
@@ -595,10 +590,10 @@ class TableWindow(QMainWindow):
                     next_start_item.setText(end_frame_value)
                     self.main_table.itemChanged.connect(self._on_table_item_changed)
                     
-                    self.logger.debug(f"구간 {current_segment + 1} START 프레임 자동 입력: {end_frame_value}")
+
         
         except Exception as e:
-            self.logger.error(f"프레임 자동 입력 실패: {e}")
+            pass
             # 시그널 연결 복구
             self.main_table.itemChanged.connect(self._on_table_item_changed)
     
@@ -606,7 +601,7 @@ class TableWindow(QMainWindow):
         """FPS 값 변경 처리"""
         try:
             if item.row() == 0 and item.column() == 1:
-                self.logger.debug(f"FPS 값 변경: {item.text()}")
+
                 
                 # 자동 계산 실행
                 self._check_and_calculate_auto_values()
@@ -615,18 +610,18 @@ class TableWindow(QMainWindow):
                 self._collect_and_send_table_data()
         
         except Exception as e:
-            self.logger.error(f"FPS 변경 처리 실패: {e}")
+            pass
     
     def _on_data_updated(self, data):
         """데이터 업데이트 처리"""
         try:
-            self.logger.debug("테이블 데이터 업데이트 수신")
+
             
             # 데이터가 dict 형태로 전달되는지 확인
             if isinstance(data, dict):
                 # 최적화 그래프 데이터가 포함된 경우 7열 업데이트
                 if 'optimization_velocity' in data:
-                    self.logger.info("최적화 속도 데이터 감지 - 7열 업데이트 실행")
+
                     self._update_optimization_velocity_column(data['optimization_velocity'])
                 
                 # 세그먼트 데이터 업데이트
@@ -639,37 +634,37 @@ class TableWindow(QMainWindow):
                         self._refresh_table_from_data()
             
         except Exception as e:
-            self.logger.error(f"데이터 업데이트 처리 실패: {e}")
+            pass
             self._show_error_message("데이터 업데이트 오류", f"테이블 업데이트 중 오류가 발생했습니다: {e}")
     
     def _on_graph_data_updated(self, graph_data):
         """그래프 데이터 업데이트 처리 (초기 생성 시 7, 8, 9, 10열 업데이트용)"""
         try:
-            self.logger.info("=== 테이블: 그래프 데이터 업데이트 수신 ===")
+
             
             # 최적화 그래프 데이터가 있으면 7열 업데이트
             if 'optimization_velocity' in graph_data:
-                self.logger.info("최적화 속도 데이터 감지 - 7열 초기 업데이트 실행")
+
                 self._update_optimization_velocity_column(graph_data['optimization_velocity'])
             
             # 8, 9, 10열 자동 계산 실행 (기존 자동 계산 로직 활용)
-            self.logger.info("그래프 생성 완료 - 8, 9, 10열 자동 계산 실행")
+
             self._calculate_acc_time_values()  # 6열 가속도 시간
             
             # DataBridge에서 계산된 segments 데이터 가져와서 8, 9, 10열 업데이트
             if self.data_bridge:
                 project_data = self.data_bridge.get_project_data()
                 segments = project_data.get('segments', [])
-                self.logger.info(f"DataBridge에서 {len(segments)}개 구간 데이터 가져옴")
+
                 self._update_calculated_columns_from_segments(segments)
             
         except Exception as e:
-            self.logger.error(f"그래프 데이터 업데이트 처리 실패: {e}")
+            pass
     
     def _update_calculated_columns_from_segments(self, segments):
         """DataBridge segments 데이터로부터 8, 9, 10열 업데이트"""
         try:
-            self.logger.info(f"=== segments 데이터로부터 8, 9, 10열 업데이트 시작 ===")
+
             
             # 시그널 연결 일시 해제 (무한 루프 방지)
             try:
@@ -684,14 +679,14 @@ class TableWindow(QMainWindow):
                 if row >= self.main_table.rowCount():
                     break
                 
-                self.logger.info(f"구간 {i+1} (행 {row}) 업데이트:")
-                self.logger.info(f"  acceleration: {segment.get('acceleration', 'N/A')} (type: {type(segment.get('acceleration'))})")
-                self.logger.info(f"  duration: {segment.get('duration', 'N/A')} (type: {type(segment.get('duration'))})")
-                self.logger.info(f"  acc_dec_type: {segment.get('acc_dec_type', 'N/A')} (type: {type(segment.get('acc_dec_type'))})")
+
+
+
+
                 
                 # 8열: 가속도 (acceleration)
                 acceleration = segment.get('acceleration', None)
-                self.logger.info(f"  → 8열 가속도 값 확인: {acceleration} (type: {type(acceleration)})")
+
                 
                 # 계산된 가속도가 있는 경우 (빈 문자열 제외, 0.0 포함)
                 if acceleration is not None and acceleration != "":
@@ -703,11 +698,11 @@ class TableWindow(QMainWindow):
                         acc_item = self.main_table.item(row, 8)
                         if acc_item:
                             acc_item.setText(f"{acceleration:.2f}")
-                            self.logger.info(f"  → 8열 가속도 설정 성공: {acceleration:.2f}")
+
                     except (ValueError, TypeError) as e:
-                        self.logger.error(f"  → 8열 가속도 설정 실패: {e}")
+                        pass
                 else:
-                    self.logger.info(f"  → 8열 가속도 값이 없어서 설정하지 않음: acceleration={acceleration}")
+                    pass
                 
                 # 9열: 지속시간 (duration)
                 duration = segment.get('duration', None)
@@ -715,7 +710,7 @@ class TableWindow(QMainWindow):
                     duration_item = self.main_table.item(row, 9)
                     if duration_item:
                         duration_item.setText(f"{duration:.3f}")
-                        self.logger.info(f"  → 9열 지속시간 설정: {duration:.3f}")
+
                 
                 # 10열: 가속도 유형 및 색상 (acc_dec_type)
                 acc_dec_type = segment.get('acc_dec_type', '')
@@ -735,15 +730,15 @@ class TableWindow(QMainWindow):
                             color = AUTO_CALCULATION_COLOR
                         
                         acc_dec_item.setBackground(QBrush(QColor(color)))
-                        self.logger.info(f"  → 10열 가속도 유형 설정: {acc_dec_type} (색상: {color})")
+
             
             # 시그널 재연결
             self.main_table.itemChanged.connect(self._on_table_item_changed)
             
-            self.logger.info("=== segments 데이터 업데이트 완료 ===")
+
             
         except Exception as e:
-            self.logger.error(f"segments 데이터 업데이트 실패: {e}")
+            pass
             # 시그널 재연결 (에러 시에도)
             try:
                 self.main_table.itemChanged.connect(self._on_table_item_changed)
@@ -804,7 +799,7 @@ class TableWindow(QMainWindow):
                         pass  # 잘못된 프레임 값은 무시
             
         except Exception as e:
-            self.logger.error(f"시간 계산 실패: {e}")
+            pass
     
     def _calculate_velocity_values(self):
         """5열 속도 값 자동 계산 - 병합된 셀에 km/h 단위로 표시"""
@@ -849,7 +844,7 @@ class TableWindow(QMainWindow):
                         pass  # 잘못된 값은 무시
             
         except Exception as e:
-            self.logger.error(f"속도 계산 실패: {e}")
+            pass
     
     def _calculate_segment_time_values(self, start_row):
         """특정 구간의 4열 시간 값 계산 - 병합된 셀"""
@@ -896,7 +891,7 @@ class TableWindow(QMainWindow):
                     pass  # 잘못된 프레임 값은 무시
             
         except Exception as e:
-            self.logger.error(f"구간 시간 계산 실패: {e}")
+            pass
     
     def _calculate_segment_velocity_values(self, start_row):
         """특정 구간의 5열 속도 값 계산 - 병합된 셀에 km/h 단위로 표시"""
@@ -938,7 +933,7 @@ class TableWindow(QMainWindow):
                     pass  # 잘못된 값은 무시
             
         except Exception as e:
-            self.logger.error(f"구간 속도 계산 실패: {e}")
+            pass
     
     def _calculate_acc_time_values(self):
         """6열 가속도 적용 시간 자동 계산"""
@@ -972,10 +967,10 @@ class TableWindow(QMainWindow):
                 if end_time_item:
                     end_time_item.setText(curr_time)
                 
-                self.logger.debug(f"구간 {segment_index + 1} 가속도 시간 설정: 윗셀={prev_time}, 아랫셀={curr_time}")
+
             
         except Exception as e:
-            self.logger.error(f"가속도 시간 계산 실패: {e}")
+            pass
     
     def _calculate_segment_acc_time_values(self, start_row):
         """특정 구간의 6열 가속도 적용 시간 계산"""
@@ -1007,10 +1002,10 @@ class TableWindow(QMainWindow):
             if end_time_item:
                 end_time_item.setText(curr_time)
             
-            self.logger.debug(f"구간 {segment_index + 1} 가속도 시간 설정: 윗셀={prev_time}, 아랫셀={curr_time}")
+
             
         except Exception as e:
-            self.logger.error(f"구간 가속도 시간 계산 실패: {e}")
+            pass
     
     def _update_optimization_velocity_column(self, optimization_data):
         """7열에 최적화 그래프 속도 데이터 연동"""
@@ -1018,16 +1013,7 @@ class TableWindow(QMainWindow):
             if not optimization_data:
                 return
             
-            self.logger.info(f"=== 7열 최적화 속도 업데이트 시작 ===")
-            self.logger.info(f"수신한 최적화 데이터: {len(optimization_data)}개 포인트")
-            
-            # 모든 optimization_data 포인트 상세 로깅
-            self.logger.info("=== optimization_data 전체 포인트 분석 ===")
-            for i, point in enumerate(optimization_data):
-                time_val = point.get('time', 0.0)
-                velocity_val = point.get('velocity', 0.0)
-                self.logger.info(f"optimization_data[{i}]: time={time_val:.3f}초, velocity={velocity_val:.2f}km/h")
-            self.logger.info("=" * 50)
+
             
             # 시그널 연결 일시 해제 (무한 루프 방지)
             try:
@@ -1042,7 +1028,7 @@ class TableWindow(QMainWindow):
                 segment_end_row = row + 1    # 구간 끝 행 (아랫셀)
                 segment_index = (row - 2) // 2
                 
-                self.logger.info(f"처리중: row={row}, segment_index={segment_index}")
+
                 
                 # 해당 구간에 대응하는 최적화 데이터가 있는지 확인
                 if segment_index < len(optimization_data):
@@ -1054,7 +1040,7 @@ class TableWindow(QMainWindow):
                         if start_vel_item:
                             start_vel_item.setText(f"{start_velocity:.2f}")
                         
-                        self.logger.info(f"구간 {segment_index + 1} 시작점 (행{segment_start_row}): optimization_data[{data_index}] = {start_velocity:.2f}")
+
                     
                     # 구간 끝점 속도 (아랫셀) - 다음 데이터 포인트
                     end_data_index = segment_index * 2 + 1  # 실제 데이터 인덱스 (1,3,5,7,9)
@@ -1064,14 +1050,14 @@ class TableWindow(QMainWindow):
                         if end_vel_item:
                             end_vel_item.setText(f"{end_velocity:.2f}")
                         
-                        self.logger.info(f"구간 {segment_index + 1} 끝점 (행{segment_end_row}): optimization_data[{end_data_index}] = {end_velocity:.2f}")
+
                     else:
                         # 마지막 구간의 경우 끝점은 마지막 포인트와 동일
                         end_vel_item = self.main_table.item(segment_end_row, 7)
                         if end_vel_item:
                             end_vel_item.setText(f"{start_velocity:.2f}")
                         
-                        self.logger.debug(f"마지막 구간 {segment_index + 1} 끝점 속도: {start_velocity:.2f}")
+
             
             # 시그널 연결 복구
             try:
@@ -1080,10 +1066,10 @@ class TableWindow(QMainWindow):
                 # 이미 연결되어 있는 경우
                 pass
             
-            self.logger.info("=== 7열 최적화 속도 업데이트 완료 ===")
+
             
         except Exception as e:
-            self.logger.error(f"최적화 속도 컬럼 업데이트 실패: {e}")
+            pass
             # 시그널 연결 복구 (에러 시에도)
             try:
                 self.main_table.itemChanged.connect(self._on_table_item_changed)
@@ -1152,7 +1138,7 @@ class TableWindow(QMainWindow):
             item_10.setBackground(QBrush(QColor(color)))
                 
         except Exception as e:
-            self.logger.error(f"가속도 색상 업데이트 실패: {e}")
+            pass
     
     def _check_and_calculate_auto_values(self):
         """사용자 입력 데이터가 완성된 구간별로 자동 계산 실행"""
@@ -1176,17 +1162,17 @@ class TableWindow(QMainWindow):
                     self._calculate_segment_time_values(row)
                     self._calculate_segment_velocity_values(row)
                     self._calculate_segment_acc_time_values(row)  # 6열 가속도 시간 계산 추가
-                    self.logger.debug(f"구간 {(row-2)//2 + 1} 자동 계산 완료")
+
             
         except Exception as e:
-            self.logger.error(f"자동 계산 확인 실패: {e}")
+            pass
     
     # === 데이터 수집 및 새로고침 메서드 ===
     
     def _collect_and_send_table_data(self):
         """테이블 데이터 수집 후 Data Bridge로 전송"""
         try:
-            self.logger.info("=== 데이터 수집 시작 ===")
+
             segments_data = []
             
             # 메인 테이블에서 구간별 데이터 처리 (2행씩 그룹)
@@ -1197,24 +1183,23 @@ class TableWindow(QMainWindow):
                 # 각 구간의 데이터 추출
                 segment_data = {}
                 
-                # 병합된 셀 (0, 1, 2, 3, 5, 8, 9, 10): 시작 행에서만 값 가져오기
+                # 사용자 입력 데이터만 수집 (1-6열) - 7-10열 제외하여 무한 루프 방지
                 segment_data['segment_num'] = self._get_cell_value(segment_start_row, 0)
                 segment_data['frame_start'] = self._get_cell_value(segment_start_row, 1)
                 segment_data['frame_end'] = self._get_cell_value(segment_start_row, 2)
                 segment_data['distance'] = self._get_cell_value(segment_start_row, 3)
                 segment_data['avg_velocity'] = self._get_cell_value(segment_start_row, 5)  # 병합된 셀 - 시작 행에서 읽기
-                segment_data['acceleration'] = self._get_cell_value(segment_start_row, 8)
-                segment_data['duration'] = self._get_cell_value(segment_start_row, 9)
-                segment_data['acc_dec_type'] = self._get_cell_value(segment_start_row, 10)
                 
-                # 병합되지 않은 셀: 각 행에서 각각의 상태 데이터 가져오기
+                # 시간 관련 데이터 (4, 6열)
                 segment_data['avg_time'] = self._get_cell_value(segment_start_row, 4)  # 시작 상태 시간
                 segment_data['acc_time'] = self._get_cell_value(segment_start_row, 6)   # 시작 상태 가속시간
-                segment_data['acc_velocity'] = self._get_cell_value(segment_end_row, 7) if segment_end_row < self.main_table.rowCount() else ""  # 끝 상태 속도
+                
+                # 7-10열은 제외 (시스템 계산 값): acc_velocity, acceleration, duration, acc_dec_type
+                # 이 값들은 DataBridge에서 계산되어 다시 테이블로 전송되므로 무한 루프 방지를 위해 제외
                 
                 # 디버깅: 수집된 데이터 확인
                 segment_num = (segment_start_row - 2) // 2 + 1
-                self.logger.info(f"수집된 구간 {segment_num}: avg_time='{segment_data['avg_time']}', avg_velocity='{segment_data['avg_velocity']}'")
+
                 
                 segments_data.append(segment_data)
             
@@ -1231,17 +1216,16 @@ class TableWindow(QMainWindow):
                 }
                 
                 # 디버깅: DataBridge로 전송되는 데이터 확인
-                self.logger.info(f"=== DataBridge 전송 데이터 ===")
-                self.logger.info(f"전송할 구간 수: {len(segments_data)}")
+
+
                 for i, segment in enumerate(segments_data):
-                    self.logger.info(f"구간 {i+1}: frame_start={segment.get('frame_start')}, frame_end={segment.get('frame_end')}, distance={segment.get('distance')}")
-                    self.logger.info(f"        avg_time={segment.get('avg_time')}, avg_velocity={segment.get('avg_velocity')}")
+                    pass
                 
                 self.data_bridge.update_from_table(table_data)
-                self.logger.info("테이블 데이터 DataBridge 전송 완료")
+
             
         except Exception as e:
-            self.logger.error(f"테이블 데이터 수집 실패: {e}")
+            pass
     
     def _get_cell_value(self, row, col):
         """테이블 셀 값 가져오기"""
@@ -1393,10 +1377,10 @@ class TableWindow(QMainWindow):
             if fps_item:
                 fps_item.setText(str(fps_value))
             
-            self.logger.debug("테이블 새로고침 완료")
+
             
         except Exception as e:
-            self.logger.error(f"테이블 새로고침 실패: {e}")
+            pass
     
     def _set_cell_value(self, row, col, value):
         """테이블 셀 값 설정"""
@@ -1588,27 +1572,27 @@ class TableWindow(QMainWindow):
     def _load_preset1(self):
         """프리셋1 데이터 로드"""
         try:
-            self.logger.info("프리셋1 데이터 로드 시작")
+
             preset_data = self._get_preset1_data()
             self._apply_preset_data(preset_data)
             self._show_info_message("프리셋 로드", "프리셋1 데이터가 성공적으로 로드되었습니다.")
-            self.logger.info("프리셋1 데이터 로드 완료")
+
             
         except Exception as e:
-            self.logger.error(f"프리셋1 로드 실패: {e}")
+            pass
             self._show_error_message("프리셋 로드 오류", f"프리셋1 로드 중 오류가 발생했습니다: {e}")
     
     def _load_preset2(self):
         """프리셋2 데이터 로드"""
         try:
-            self.logger.info("프리셋2 데이터 로드 시작")
+
             preset_data = self._get_preset2_data()
             self._apply_preset_data(preset_data)
             self._show_info_message("프리셋 로드", "프리셋2 데이터가 성공적으로 로드되었습니다.")
-            self.logger.info("프리셋2 데이터 로드 완료")
+
             
         except Exception as e:
-            self.logger.error(f"프리셋2 로드 실패: {e}")
+            pass
             self._show_error_message("프리셋 로드 오류", f"프리셋2 로드 중 오류가 발생했습니다: {e}")
     
     def _apply_preset_data(self, preset_data):
@@ -1638,12 +1622,12 @@ class TableWindow(QMainWindow):
             QApplication.processEvents()
             
             # 디버깅: 자동 계산 후 실제 테이블 값 확인
-            self.logger.info("=== 프리셋 로드 후 테이블 값 확인 ===")
+
             for row in range(2, self.main_table.rowCount(), 2):
                 segment_num = (row - 2) // 2 + 1
                 avg_time = self._get_cell_value(row, 4)
                 avg_velocity = self._get_cell_value(row, 5)
-                self.logger.info(f"구간 {segment_num}: avg_time={avg_time}, avg_velocity={avg_velocity}")
+
             
             # 데이터 수집 및 전송
             self._collect_and_send_table_data()
@@ -1652,10 +1636,10 @@ class TableWindow(QMainWindow):
             self.main_table.itemChanged.connect(self._on_table_item_changed)
             self.fps_table.itemChanged.connect(self._on_fps_changed)
             
-            self.logger.debug("프리셋 데이터 적용 완료")
+
             
         except Exception as e:
-            self.logger.error(f"프리셋 데이터 적용 실패: {e}")
+            pass
             # 시그널 다시 연결 (에러 시에도)
             self.main_table.itemChanged.connect(self._on_table_item_changed)
             self.fps_table.itemChanged.connect(self._on_fps_changed)
@@ -1777,10 +1761,10 @@ class TableWindow(QMainWindow):
             self.main_table.setRowHeight(segment_start_row, 30)
             self.main_table.setRowHeight(segment_end_row, 30)
             
-            self.logger.debug(f"프리셋 구간 {segment_data.get('segment_num', '')} 추가 완료")
+
             
         except Exception as e:
-            self.logger.error(f"프리셋 구간 추가 실패: {e}")
+            pass
     
     def closeEvent(self, event):
         """윈도우 종료 이벤트"""

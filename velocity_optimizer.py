@@ -4,7 +4,6 @@ VelocityOptimizer - 메인 컨트롤러
 """
 
 import sys
-import logging
 from PyQt5.QtWidgets import QMessageBox, QApplication
 from PyQt5.QtCore import QObject, pyqtSignal
 
@@ -20,7 +19,6 @@ class VelocityOptimizer(QObject):
     
     def __init__(self):
         super().__init__()
-        self.logger = logging.getLogger(__name__)
         
         # 컴포넌트 초기화
         self.data_bridge = None
@@ -29,8 +27,6 @@ class VelocityOptimizer(QObject):
         
         self._initialize_components()
         self._connect_signals()
-        
-        self.logger.info("VelocityOptimizer 초기화 완료")
     
     def _initialize_components(self):
         """모든 컴포넌트 초기화"""
@@ -45,10 +41,7 @@ class VelocityOptimizer(QObject):
             # Data Bridge에 윈도우 연결
             self.data_bridge.set_windows(self.table_window, self.graph_window)
             
-            self.logger.info("모든 컴포넌트 초기화 완료")
-            
         except Exception as e:
-            self.logger.error(f"컴포넌트 초기화 실패: {e}")
             self._show_error_message("초기화 오류", f"프로그램 초기화 중 오류가 발생했습니다:\n{e}")
             sys.exit(1)
     
@@ -75,15 +68,11 @@ class VelocityOptimizer(QObject):
                 table_geometry.y()
             )
             
-            self.logger.info("윈도우 표시 완료")
-            
         except Exception as e:
-            self.logger.error(f"윈도우 표시 실패: {e}")
             self._show_error_message("표시 오류", f"윈도우 표시 중 오류가 발생했습니다:\n{e}")
     
     def _on_window_closing(self):
         """윈도우 종료 이벤트 처리"""
-        self.logger.info("윈도우 종료 요청 수신")
         
         # 데이터 저장 확인
         if self._check_unsaved_changes():
@@ -109,7 +98,6 @@ class VelocityOptimizer(QObject):
     def _shutdown(self):
         """애플리케이션 종료"""
         try:
-            self.logger.info("애플리케이션 종료 시작")
             
             # 윈도우 닫기
             if self.table_window:
@@ -124,10 +112,8 @@ class VelocityOptimizer(QObject):
             # 애플리케이션 종료
             QApplication.quit()
             
-            self.logger.info("애플리케이션 종료 완료")
-            
         except Exception as e:
-            self.logger.error(f"종료 처리 중 오류: {e}")
+            pass
     
     def _show_error_message(self, title, message):
         """에러 메시지 표시"""

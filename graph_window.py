@@ -3,7 +3,6 @@ GraphWindow - 그래프 윈도우
 데이터 시각화 및 인터랙티브 조작
 """
 
-import logging
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QFileDialog, QMessageBox
@@ -32,7 +31,6 @@ class GraphWindow(QMainWindow):
     
     def __init__(self, data_bridge):
         super().__init__()
-        self.logger = logging.getLogger(__name__)
         self.data_bridge = data_bridge
         
         # 그래프 데이터
@@ -49,8 +47,6 @@ class GraphWindow(QMainWindow):
         self._setup_ui()
         self._setup_graph()
         self._connect_signals()
-        
-        self.logger.info("GraphWindow 초기화 완료")
     
     def _setup_ui(self):
         """UI 설정"""
@@ -141,8 +137,6 @@ class GraphWindow(QMainWindow):
     def _on_data_updated(self, graph_data):
         """데이터 업데이트 처리"""
         try:
-            self.logger.info("=== GraphWindow: 그래프 데이터 수신 ===")
-            
             # 데이터 저장
             self.optimization_data = graph_data.get('optimization_velocity', [])
             self.video_analysis_data = graph_data.get('video_analysis_velocity', [])
@@ -152,33 +146,16 @@ class GraphWindow(QMainWindow):
             if self.dragging:
                 self.dragging = False
                 self.selected_point_index = None
-                self.logger.info("데이터 업데이트로 인한 드래그 상태 초기화")
-            
-            self.logger.info(f"수신한 데이터: optimization={len(self.optimization_data)}개, video_analysis={len(self.video_analysis_data)}개")
-            
-            if self.video_analysis_data:
-                self.logger.info("Video Analysis 첫 2개 포인트:")
-                for i, point in enumerate(self.video_analysis_data[:2]):
-                    self.logger.info(f"  포인트 {i+1}: time={point['time']}, velocity={point['velocity']}")
-            else:
-                self.logger.warning("Video Analysis 데이터가 비어있음!")
             
             # 그래프 다시 그리기
             self._update_graph()
             
-            self.logger.debug("그래프 데이터 업데이트 완료")
-            
         except Exception as e:
-            self.logger.error(f"그래프 데이터 업데이트 실패: {e}")
             self._show_error_message("그래프 업데이트 오류", f"그래프 업데이트 중 오류: {e}")
     
     def _update_graph(self):
         """그래프 다시 그리기"""
-        self.logger.info("=== GraphWindow: 그래프 업데이트 시작 ===")
-        self.logger.info(f"graph_visible={self.graph_visible}")
-        
         if not self.graph_visible:
-            self.logger.info("그래프가 숨겨진 상태이므로 업데이트 중단")
             return
         
         # 기존 그래프 지우기 (범례 제외)
@@ -245,15 +222,10 @@ class GraphWindow(QMainWindow):
                     # 무효한 인덱스인 경우 드래그 상태 초기화
                     self.dragging = False
                     self.selected_point_index = None
-                    self.logger.warning(f"무효한 선택 포인트 인덱스 감지 - 드래그 상태 초기화")
         
         if self.video_analysis_data:
             times = [point['time'] for point in self.video_analysis_data]
             velocities = [point['velocity'] for point in self.video_analysis_data]
-            
-            self.logger.info(f"Video Analysis 그래프 그리기: {len(times)}개 포인트")
-            self.logger.info(f"시간 범위: {min(times):.3f} ~ {max(times):.3f}")
-            self.logger.info(f"속도 범위: {min(velocities):.2f} ~ {max(velocities):.2f}")
             
             self.ax.step(times, velocities,
                         color=VIDEO_ANALYSIS_VELOCITY_COLOR,
@@ -261,10 +233,6 @@ class GraphWindow(QMainWindow):
                         marker='s', markersize=POINT_SIZE,
                         linewidth=LINE_WIDTH, fillstyle='none',
                         where='post')
-            
-            self.logger.info("Video Analysis 그래프 그리기 완료")
-        else:
-            self.logger.warning("Video Analysis 데이터 없음 - 그래프 생성하지 않음")
         
         if self.ground_truth_data:
             times = [point['time'] for point in self.ground_truth_data]
@@ -280,8 +248,6 @@ class GraphWindow(QMainWindow):
         
         # 캔버스 다시 그리기
         self.canvas.draw()
-        
-        self.logger.info("=== GraphWindow: 그래프 업데이트 완료 ===")
     
     # === 마우스 이벤트 핸들러 ===
     
@@ -314,7 +280,6 @@ class GraphWindow(QMainWindow):
         if min_distance < threshold and closest_index is not None:
             self.dragging = True
             self.selected_point_index = closest_index
-            self.logger.debug(f"포인트 {closest_index} 선택됨: {self.optimization_data[closest_index]}")
     
     def _on_mouse_release(self, event):
         """마우스 릴리즈 이벤트"""
@@ -327,7 +292,6 @@ class GraphWindow(QMainWindow):
                     'optimization_velocity': self.optimization_data
                 }
                 self.data_bridge.update_from_graph(graph_data)
-                self.logger.debug("드래그 완료 - 데이터 업데이트 전송")
             
             self.selected_point_index = None
     
@@ -350,7 +314,6 @@ class GraphWindow(QMainWindow):
                 
                 # 그래프 실시간 업데이트 (Y축 범위도 자동 조정됨)
                 self._update_graph()
-                self.logger.debug(f"포인트 {self.selected_point_index} 속도 변경: {new_velocity:.2f} km/h")
     
     # === 버튼 이벤트 핸들러 ===
     
@@ -367,8 +330,6 @@ class GraphWindow(QMainWindow):
                 line.set_visible(False)
             self.canvas.draw()
             self.show_graph_button.setText('SHOW GRAPH')
-        
-        self.logger.info(f"그래프 표시 상태: {self.graph_visible}")
     
     def _upload_ground_truth(self):
         """Ground Truth CSV 업로드"""
@@ -394,9 +355,7 @@ class GraphWindow(QMainWindow):
             try:
                 self.figure.savefig(file_path, dpi=300, bbox_inches='tight')
                 self._show_info_message("이미지 저장", f"PNG 파일로 저장했습니다:\n{file_path}")
-                self.logger.info(f"PNG 저장 완료: {file_path}")
             except Exception as e:
-                self.logger.error(f"PNG 저장 실패: {e}")
                 self._show_error_message("저장 오류", f"PNG 저장 중 오류: {e}")
     
     def _save_as_svg(self):
@@ -409,9 +368,7 @@ class GraphWindow(QMainWindow):
             try:
                 self.figure.savefig(file_path, format='svg', bbox_inches='tight')
                 self._show_info_message("이미지 저장", f"SVG 파일로 저장했습니다:\n{file_path}")
-                self.logger.info(f"SVG 저장 완료: {file_path}")
             except Exception as e:
-                self.logger.error(f"SVG 저장 실패: {e}")
                 self._show_error_message("저장 오류", f"SVG 저장 중 오류: {e}")
     
     # === 유틸리티 메서드 ===
@@ -445,13 +402,9 @@ class GraphWindow(QMainWindow):
                 
                 # X축 범위 설정
                 self.ax.set_xlim(x_min, x_max)
-                
-                self.logger.info(f"X축 범위 자동 조정: {x_min:.1f} ~ {x_max:.1f}")
-                self.logger.info(f"시간 데이터 범위: {min_time:.3f} ~ {max_time:.3f}")
             else:
                 # 데이터가 없으면 기본 X축 범위
                 self.ax.set_xlim(0, 20)
-                self.logger.info("데이터가 없어 기본 X축 범위 사용: 0 ~ 20")
             
             # Y축 범위 조정 (속도 - 최고점이 Y축의 2/3 지점에 오도록)
             if all_velocities:
@@ -470,17 +423,11 @@ class GraphWindow(QMainWindow):
                 
                 # Y축 범위 설정
                 self.ax.set_ylim(y_min, y_max)
-                
-                self.logger.info(f"Y축 범위 자동 조정: {y_min:.1f} ~ {y_max:.1f}")
-                self.logger.info(f"속도 데이터 범위: {min_vel:.2f} ~ {max_vel:.2f}")
-                self.logger.info(f"최고점 위치: {((max_vel - y_min) / (y_max - y_min))*100:.1f}% 지점")
             else:
                 # 데이터가 없으면 기본 Y축 범위
                 self.ax.set_ylim(0, 75)
-                self.logger.info("데이터가 없어 기본 Y축 범위 사용: 0 ~ 75")
                 
         except Exception as e:
-            self.logger.error(f"축 범위 조정 실패: {e}")
             # 실패 시 기본 범위
             self.ax.set_xlim(0, 20)
             self.ax.set_ylim(0, 75)
@@ -504,7 +451,6 @@ class GraphWindow(QMainWindow):
                     acceleration = vel_diff_ms / time_diff
                     
                     if acceleration > max_acc or acceleration < max_dec:
-                        self.logger.debug(f"가속도 제한 초과: {acceleration:.2f} m/s²")
                         return False
             
             # 다음 포인트와의 가속도 검증
@@ -518,13 +464,11 @@ class GraphWindow(QMainWindow):
                     acceleration = vel_diff_ms / time_diff
                     
                     if acceleration > max_acc or acceleration < max_dec:
-                        self.logger.debug(f"가속도 제한 초과: {acceleration:.2f} m/s²")
                         return False
             
             return True
             
         except Exception as e:
-            self.logger.error(f"속도 검증 실패: {e}")
             return True  # 에러 시 허용
     
     def _show_error_message(self, title, message):
