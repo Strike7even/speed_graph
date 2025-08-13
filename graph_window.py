@@ -11,6 +11,7 @@ from PyQt5.QtCore import Qt, pyqtSignal
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
+from matplotlib.ticker import MultipleLocator
 import matplotlib.pyplot as plt
 import seaborn as sns
 
@@ -153,8 +154,12 @@ class GraphWindow(QMainWindow):
         except Exception as e:
             self._show_error_message("그래프 업데이트 오류", f"그래프 업데이트 중 오류: {e}")
     
-    def _update_graph(self):
-        """그래프 다시 그리기"""
+    def _update_graph(self, skip_axis_adjustment=False):
+        """그래프 다시 그리기
+        
+        Args:
+            skip_axis_adjustment: True면 축 범위 조정 생략 (드래그 중일 때)
+        """
         if not self.graph_visible:
             return
         
@@ -167,8 +172,9 @@ class GraphWindow(QMainWindow):
         for line in lines_to_remove:
             line.remove()
         
-        # X축, Y축 범위 자동 조정
-        self._adjust_axis_ranges()
+        # X축, Y축 범위 자동 조정 (드래그 중이 아닐 때만)
+        if not skip_axis_adjustment:
+            self._adjust_axis_ranges()
         
         # 새 데이터로 그래프 그리기
         if self.optimization_data:
@@ -286,6 +292,9 @@ class GraphWindow(QMainWindow):
         if self.dragging:
             self.dragging = False
             
+            # 드래그 완료 후 Y축 범위 재조정을 위해 그래프 업데이트
+            self._update_graph(skip_axis_adjustment=False)
+            
             # 변경된 데이터를 Data Bridge로 전송
             if self.data_bridge:
                 graph_data = {
@@ -312,8 +321,8 @@ class GraphWindow(QMainWindow):
                     if abs(point['time'] - current_time) < 0.001 and i != self.selected_point_index:
                         point['velocity'] = new_velocity
                 
-                # 그래프 실시간 업데이트 (Y축 범위도 자동 조정됨)
-                self._update_graph()
+                # 그래프 실시간 업데이트 (드래그 중에는 Y축 범위 조정 안함)
+                self._update_graph(skip_axis_adjustment=True)
     
     # === 버튼 이벤트 핸들러 ===
     
@@ -406,26 +415,38 @@ class GraphWindow(QMainWindow):
                 # 데이터가 없으면 기본 X축 범위
                 self.ax.set_xlim(0, 20)
             
-            # Y축 범위 조정 (속도 - 최고점이 Y축의 2/3 지점에 오도록)
+            # Y축 범위 조정 (항상 0부터 시작, 최고점이 Y축의 80% 지점에 오도록)
             if all_velocities:
-                min_vel = min(all_velocities)
                 max_vel = max(all_velocities)
                 
-                # 최소값은 0 또는 (min_vel - 여유공간) 중 큰 값
-                vel_range = max_vel - min_vel
-                margin = vel_range * 0.1 if vel_range > 0 else 5
-                y_min = max(0, min_vel - margin)
+                # Y축 하단은 항상 0
+                y_min = 0
                 
-                # 실제 데이터 범위를 Y축의 2/3에 맞춤
-                data_range = max_vel - y_min
-                y_axis_range = data_range / (2/3)  # 데이터 범위가 Y축의 2/3가 되도록
-                y_max = y_min + y_axis_range
+                # 최대값이 Y축의 80% 지점에 오도록 설정 (상단 여유 20%)
+                # max_vel이 0인 경우 기본값 사용
+                if max_vel > 0:
+                    y_max = max_vel * 1.25  # 최고점이 80% 지점 (1/0.8 = 1.25)
+                else:
+                    y_max = 75  # 기본 최대값
+                
+                # 최소 높이 보장 (너무 작은 범위 방지)
+                if y_max < 10:
+                    y_max = 10
                 
                 # Y축 범위 설정
                 self.ax.set_ylim(y_min, y_max)
+                
+                # Y축 그리드 간격 조정 (5의 배수로)
+                if y_max <= 50:
+                    self.ax.yaxis.set_major_locator(MultipleLocator(5))
+                elif y_max <= 100:
+                    self.ax.yaxis.set_major_locator(MultipleLocator(10))
+                else:
+                    self.ax.yaxis.set_major_locator(MultipleLocator(20))
             else:
                 # 데이터가 없으면 기본 Y축 범위
                 self.ax.set_ylim(0, 75)
+                self.ax.yaxis.set_major_locator(MultipleLocator(5))
                 
         except Exception as e:
             # 실패 시 기본 범위
