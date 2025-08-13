@@ -138,6 +138,14 @@ class GraphWindow(QMainWindow):
     def _on_data_updated(self, graph_data):
         """데이터 업데이트 처리"""
         try:
+            import traceback
+            print(f"[GraphWindow] _on_data_updated 호출 - optimization_velocity 개수: {len(graph_data.get('optimization_velocity', []))}")
+            print(f"[GraphWindow] 호출 스택:")
+            stack = traceback.extract_stack()
+            for frame in stack[-4:-1]:  # 최근 3개 프레임만 출력
+                print(f"  {frame.filename}:{frame.lineno} in {frame.name}")
+            print("---")
+            
             # 데이터 저장
             self.optimization_data = graph_data.get('optimization_velocity', [])
             self.video_analysis_data = graph_data.get('video_analysis_velocity', [])
@@ -290,6 +298,7 @@ class GraphWindow(QMainWindow):
     def _on_mouse_release(self, event):
         """마우스 릴리즈 이벤트"""
         if self.dragging:
+            print(f"[GraphWindow] 드래그 종료 - 현재 optimization_data 개수: {len(self.optimization_data)}")
             self.dragging = False
             
             # 드래그 완료 후 Y축 범위 재조정을 위해 그래프 업데이트
@@ -297,6 +306,7 @@ class GraphWindow(QMainWindow):
             
             # 변경된 데이터를 Data Bridge로 전송
             if self.data_bridge:
+                print(f"[GraphWindow] DataBridge로 데이터 전송: {len(self.optimization_data)}개 포인트")
                 graph_data = {
                     'optimization_velocity': self.optimization_data
                 }

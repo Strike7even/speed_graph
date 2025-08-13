@@ -563,8 +563,9 @@ class TableWindow(QMainWindow):
                     if row % 2 == 0:
                         self._update_acc_dec_color(row)
                 
-                # 실시간으로 Data Bridge에 업데이트
-                self._collect_and_send_table_data()
+                # 1~6열 변경시에만 Data Bridge 업데이트 (7~10열은 그래프에서 계산됨)
+                if col < 6:  # 0~5 인덱스 = 1~6열
+                    self._collect_and_send_table_data()
         
         except Exception as e:
             pass
@@ -615,23 +616,34 @@ class TableWindow(QMainWindow):
     def _on_data_updated(self, data):
         """데이터 업데이트 처리"""
         try:
-
+            print(f"[TableWindow] _on_data_updated 호출 - graph_updated: {data.get('graph_updated', False)}")
             
             # 데이터가 dict 형태로 전달되는지 확인
             if isinstance(data, dict):
                 # 최적화 그래프 데이터가 포함된 경우 7열 업데이트
                 if 'optimization_velocity' in data:
-
+                    print("[TableWindow] optimization_velocity로 7열 업데이트")
                     self._update_optimization_velocity_column(data['optimization_velocity'])
                 
                 # 세그먼트 데이터 업데이트
                 if 'segments' in data:
-                    # Data Bridge의 세그먼트 데이터로 테이블 새로고침
-                    if self.data_bridge:
-                        # 기존 데이터 업데이트
-                        self.data_bridge._project_data['segments'] = data['segments']
-                        # 테이블 새로고침
-                        self._refresh_table_from_data()
+                    # graph_updated 플래그 확인 - 그래프에서 온 업데이트인 경우
+                    if data.get('graph_updated', False):
+                        print("[TableWindow] 그래프에서 온 업데이트 - 7~10열만 업데이트")
+                        # 7~10열만 업데이트 (전체 새로고침 하지 않음)
+                        if self.data_bridge:
+                            # segments 데이터 업데이트 (메모리상)
+                            self.data_bridge._project_data['segments'] = data['segments']
+                            # 7~10열만 테이블에 반영
+                            self._update_columns_7_to_10_only(data['segments'])
+                    else:
+                        print("[TableWindow] 일반 업데이트 - 전체 테이블 새로고침")
+                        # 일반 업데이트 (1-6열 수정, 파일 로드, 구간 추가/삭제)
+                        if self.data_bridge:
+                            # 기존 데이터 업데이트
+                            self.data_bridge._project_data['segments'] = data['segments']
+                            # 테이블 새로고침
+                            self._refresh_table_from_data()
             
         except Exception as e:
             pass
@@ -1006,6 +1018,89 @@ class TableWindow(QMainWindow):
             
         except Exception as e:
             pass
+    
+    def _update_columns_7_to_10_only(self, segments):
+        """그래프에서 온 업데이트 시 7~10열만 업데이트"""
+        try:
+            print(f"[TableWindow] 7~10열만 업데이트 시작 - segments 개수: {len(segments)}")
+            
+            # 시그널 연결 일시 해제 (무한 루프 방지)
+            try:
+                self.main_table.itemChanged.disconnect(self._on_table_item_changed)
+            except TypeError:
+                pass
+            
+            # 각 구간별로 7~10열 업데이트
+            for i, segment in enumerate(segments):
+                row = 2 + (i * 2)  # 구간 시작 행
+                
+                if row >= self.main_table.rowCount():
+                    break
+                
+                # 7열: acc_velocity (가속도 속도)
+                acc_velocity = segment.get('acc_velocity', '')
+                if acc_velocity != '':
+                    item = self.main_table.item(row, 7)
+                    if item:
+                        item.setText(str(acc_velocity))
+                    else:
+                        item = QTableWidgetItem(str(acc_velocity))
+                        item.setTextAlignment(Qt.AlignCenter)
+                        item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
+                        self.main_table.setItem(row, 7, item)
+                
+                # 8열: acceleration (가속도)
+                acceleration = segment.get('acceleration', '')
+                if acceleration != '':
+                    item = self.main_table.item(row, 8)
+                    if item:
+                        item.setText(str(acceleration))
+                    else:
+                        item = QTableWidgetItem(str(acceleration))
+                        item.setTextAlignment(Qt.AlignCenter)
+                        item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
+                        self.main_table.setItem(row, 8, item)
+                
+                # 9열: duration (지속시간)
+                duration = segment.get('duration', '')
+                if duration != '':
+                    item = self.main_table.item(row, 9)
+                    if item:
+                        item.setText(str(duration))
+                    else:
+                        item = QTableWidgetItem(str(duration))
+                        item.setTextAlignment(Qt.AlignCenter)
+                        item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
+                        self.main_table.setItem(row, 9, item)
+                
+                # 10열: acc_dec_type (가속/감속 타입)
+                acc_dec_type = segment.get('acc_dec_type', '')
+                if acc_dec_type != '':
+                    item = self.main_table.item(row, 10)
+                    if item:
+                        item.setText(str(acc_dec_type))
+                    else:
+                        item = QTableWidgetItem(str(acc_dec_type))
+                        item.setTextAlignment(Qt.AlignCenter)
+                        # 유효성에 따른 색상 설정
+                        if 'Invalid' in acc_dec_type:
+                            item.setBackground(QBrush(QColor(255, 200, 200)))  # 연한 빨강
+                        else:
+                            item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
+                        self.main_table.setItem(row, 10, item)
+            
+            # 시그널 재연결
+            self.main_table.itemChanged.connect(self._on_table_item_changed)
+            
+            print("[TableWindow] 7~10열 업데이트 완료")
+            
+        except Exception as e:
+            print(f"[TableWindow] 7~10열 업데이트 오류: {e}")
+            # 에러 발생 시에도 시그널 재연결
+            try:
+                self.main_table.itemChanged.connect(self._on_table_item_changed)
+            except:
+                pass
     
     def _update_optimization_velocity_column(self, optimization_data):
         """7열에 최적화 그래프 속도 데이터 연동"""

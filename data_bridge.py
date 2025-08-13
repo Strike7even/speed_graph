@@ -120,8 +120,6 @@ class DataBridge(QObject):
     def update_from_graph(self, graph_data: Dict[str, Any]):
         """그래프에서 데이터 업데이트"""
         try:
-
-            
             # 최적화 속도 데이터 업데이트
             if 'optimization_velocity' in graph_data:
                 self._project_data['graph_data']['optimization_velocity'] = graph_data['optimization_velocity']
@@ -132,8 +130,8 @@ class DataBridge(QObject):
             # 변경사항 플래그 설정
             self._unsaved_changes = True
             
-            # 테이블 윈도우에 업데이트 알림
-            self.table_data_updated.emit({'segments': self._project_data['segments']})
+            # 테이블 윈도우에 업데이트 알림 - graph_updated 플래그 추가하여 순환 방지
+            self.table_data_updated.emit({'segments': self._project_data['segments'], 'graph_updated': True})
             
 
             
@@ -144,8 +142,6 @@ class DataBridge(QObject):
     def _calculate_graph_data(self):
         """테이블 데이터를 기반으로 그래프 데이터 계산"""
         try:
-
-            
             # 기존 최적화 속도 데이터 초기화
             optimization_velocity = []
             video_analysis_velocity = []
@@ -204,20 +200,11 @@ class DataBridge(QObject):
             
             # 최적화 데이터가 생성되었으므로 가속도 값들 계산
             if optimization_velocity:
-
                 self._update_table_from_optimization_data()
             
 
 
 
-            
-            if video_analysis_velocity:
-
-                for i, point in enumerate(video_analysis_velocity[:4]):
-                    pass
-
-            else:
-                pass
             
         except Exception as e:
             pass
@@ -226,8 +213,6 @@ class DataBridge(QObject):
     def _generate_optimization_velocity(self, segments, fps):
         """새로운 Optimization Velocity 알고리즘: 1/2 지점 중간점 기반 직선 연결"""
         try:
-
-            
             optimization_velocity = []
             current_time = 0.0
             previous_end_velocity = None  # 이전 구간의 끝 속도 (연속성 보장)
@@ -270,9 +255,6 @@ class DataBridge(QObject):
                         # 음수 속도 방지
                         end_velocity = max(0, end_velocity)
                         
-
-
-                        
                         # 포인트 생성: 시작점과 끝점만 (중간점은 계산용으로만 사용)
                         optimization_velocity.append({
                             'time': start_time,
@@ -288,17 +270,9 @@ class DataBridge(QObject):
                         previous_end_velocity = end_velocity
                         
                     else:
-
                         previous_end_velocity = avg_velocity
                     
                     current_time += segment_duration
-                else:
-                    pass
-            
-            if optimization_velocity:
-
-                for i, point in enumerate(optimization_velocity[:6]):
-                    pass
             
             return optimization_velocity
             
@@ -382,8 +356,6 @@ class DataBridge(QObject):
     def _update_table_from_optimization_data(self):
         """최적화된 그래프 데이터를 기반으로 테이블 업데이트"""
         try:
-
-            
             optimization_data = self._project_data['graph_data'].get('optimization_velocity', [])
             if not optimization_data:
                 return
@@ -428,7 +400,6 @@ class DataBridge(QObject):
                     
                     # 가속도가 있는 경우
                     vel_diff = abs(final_velocity - initial_velocity)
-
                     
                     if vel_diff > 0.1:  # 0.1 km/h 임계값
                         # 가속도 계산
@@ -441,8 +412,6 @@ class DataBridge(QObject):
                             segment['acceleration'] = round(acceleration, 2)
                             segment['acc_time'] = round(time_diff, 3)
                             segment['acc_velocity'] = round(final_velocity, 2)
-                            
-
                             
                             # 가속도 유효성 검증
                             max_acc = self._project_data['settings']['max_acceleration']
@@ -474,11 +443,6 @@ class DataBridge(QObject):
                         # 등속구간 유효성 검증
                         uniform_threshold = DEFAULT_UNIFORM_MOTION_THRESHOLD
                         segment['acc_dec_type'] = "Const (Uniform)"
-                        
-
-            
-
-            
         except Exception as e:
             pass
     
@@ -562,7 +526,7 @@ class DataBridge(QObject):
             self._unsaved_changes = False
             
             # 모든 윈도우에 업데이트 알림
-            self.table_data_updated.emit(self._project_data['segments'])
+            self.table_data_updated.emit({'segments': self._project_data['segments']})
             self.graph_data_updated.emit(self._project_data['graph_data'])
             
 
