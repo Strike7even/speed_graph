@@ -44,6 +44,9 @@ class GraphWindow(QMainWindow):
         self.selected_point_index = None
         self.graph_visible = True
         
+        # 속도 라벨 저장
+        self.velocity_labels = []
+        
         # UI 초기화
         self._setup_ui()
         self._setup_graph()
@@ -229,6 +232,9 @@ class GraphWindow(QMainWindow):
                     # 무효한 인덱스인 경우 드래그 상태 초기화
                     self.dragging = False
                     self.selected_point_index = None
+            
+            # 속도 라벨 추가
+            self._add_velocity_labels()
         
         if self.video_analysis_data:
             times = [point['time'] for point in self.video_analysis_data]
@@ -330,6 +336,43 @@ class GraphWindow(QMainWindow):
                 
                 # 그래프 실시간 업데이트 (드래그 중에는 Y축 범위 조정 안함)
                 self._update_graph(skip_axis_adjustment=True)
+    
+    # === 속도 라벨 메서드 ===
+    
+    def _add_velocity_labels(self):
+        """모든 데이터 포인트 위에 속도 라벨 추가"""
+        # 기존 라벨 제거
+        for label in self.velocity_labels:
+            label.remove()
+        self.velocity_labels.clear()
+        
+        if not self.optimization_data:
+            return
+        
+        # 각 포인트에 라벨 추가 (위쪽에만)
+        for i, point in enumerate(self.optimization_data):
+            # 모든 라벨을 위쪽에만 표시
+            y_offset = 10  # 기존 5에서 10으로 (2배)
+            va = 'bottom'
+            
+            # 소수점 둘째자리까지 표시 (숫자만)
+            label_text = f'{point["velocity"]:.2f}'
+            
+            # 라벨 생성
+            label = self.ax.annotate(
+                label_text,
+                xy=(point['time'], point['velocity']),
+                xytext=(0, y_offset),
+                textcoords='offset points',
+                ha='center',
+                va=va,
+                fontsize=9,
+                color='black',  # 검은색으로 변경
+                fontweight='normal',
+                zorder=15  # 포인트보다 위에 표시
+            )
+            
+            self.velocity_labels.append(label)
     
     # === 버튼 이벤트 핸들러 ===
     
