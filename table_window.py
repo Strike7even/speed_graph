@@ -627,12 +627,18 @@ class TableWindow(QMainWindow):
                 if 'segments' in data:
                     # graph_updated 플래그 확인 - 그래프에서 온 업데이트인 경우
                     if data.get('graph_updated', False):
-                        # 7~10열만 업데이트 (전체 새로고침 하지 않음)
+                        # 8~10열만 업데이트 (전체 새로고침 하지 않음)
                         if self.data_bridge:
                             # segments 데이터 업데이트 (메모리상)
                             self.data_bridge._project_data['segments'] = data['segments']
-                            # 7~10열만 테이블에 반영
+                            # 8~10열만 테이블에 반영
                             self._update_columns_7_to_10_only(data['segments'])
+                            
+                            # 안전망: graph_data_updated 신호가 누락된 경우를 대비한 7열 시계열 업데이트
+                            graph_data = self.data_bridge._project_data.get('graph_data', {})
+                            optimization_velocity = graph_data.get('optimization_velocity', [])
+                            if optimization_velocity:
+                                self._update_optimization_velocity_column(optimization_velocity)
                     else:
                         # 일반 업데이트 (1-6열 수정, 파일 로드, 구간 추가/삭제)
                         if self.data_bridge:
@@ -1016,7 +1022,7 @@ class TableWindow(QMainWindow):
             pass
     
     def _update_columns_7_to_10_only(self, segments):
-        """그래프에서 온 업데이트 시 7~10열만 업데이트"""
+        """그래프에서 온 업데이트 시 8~10열만 업데이트 (7열은 시계열 전용)"""
         try:
             
             # 시그널 연결 일시 해제 (무한 루프 방지)
@@ -1025,24 +1031,14 @@ class TableWindow(QMainWindow):
             except TypeError:
                 pass
             
-            # 각 구간별로 7~10열 업데이트
+            # 각 구간별로 8~10열만 업데이트 (7열 제외)
             for i, segment in enumerate(segments):
                 row = 2 + (i * 2)  # 구간 시작 행
                 
                 if row >= self.main_table.rowCount():
                     break
                 
-                # 7열: acc_velocity (가속도 속도)
-                acc_velocity = segment.get('acc_velocity', '')
-                if acc_velocity != '':
-                    item = self.main_table.item(row, 7)
-                    if item:
-                        item.setText(str(acc_velocity))
-                    else:
-                        item = QTableWidgetItem(str(acc_velocity))
-                        item.setTextAlignment(Qt.AlignCenter)
-                        item.setBackground(QBrush(QColor(AUTO_CALCULATION_COLOR)))
-                        self.main_table.setItem(row, 7, item)
+                # 7열은 시계열 데이터 전용으로 여기서 제외
                 
                 # 8열: acceleration (가속도)
                 acceleration = segment.get('acceleration', '')

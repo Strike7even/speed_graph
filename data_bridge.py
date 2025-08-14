@@ -145,6 +145,9 @@ class DataBridge(QObject):
             # 테이블 윈도우에 업데이트 알림 - graph_updated 플래그 추가하여 순환 방지
             self.table_data_updated.emit({'segments': self._project_data['segments'], 'graph_updated': True})
             
+            # 7열 시계열 업데이트를 위한 그래프 데이터 신호 발행
+            self.graph_data_updated.emit(self._project_data['graph_data'])
+            
 
             
         except Exception as e:
