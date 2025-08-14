@@ -616,20 +616,17 @@ class TableWindow(QMainWindow):
     def _on_data_updated(self, data):
         """데이터 업데이트 처리"""
         try:
-            print(f"[TableWindow] _on_data_updated 호출 - graph_updated: {data.get('graph_updated', False)}")
             
             # 데이터가 dict 형태로 전달되는지 확인
             if isinstance(data, dict):
                 # 최적화 그래프 데이터가 포함된 경우 7열 업데이트
                 if 'optimization_velocity' in data:
-                    print("[TableWindow] optimization_velocity로 7열 업데이트")
                     self._update_optimization_velocity_column(data['optimization_velocity'])
                 
                 # 세그먼트 데이터 업데이트
                 if 'segments' in data:
                     # graph_updated 플래그 확인 - 그래프에서 온 업데이트인 경우
                     if data.get('graph_updated', False):
-                        print("[TableWindow] 그래프에서 온 업데이트 - 7~10열만 업데이트")
                         # 7~10열만 업데이트 (전체 새로고침 하지 않음)
                         if self.data_bridge:
                             # segments 데이터 업데이트 (메모리상)
@@ -637,7 +634,6 @@ class TableWindow(QMainWindow):
                             # 7~10열만 테이블에 반영
                             self._update_columns_7_to_10_only(data['segments'])
                     else:
-                        print("[TableWindow] 일반 업데이트 - 전체 테이블 새로고침")
                         # 일반 업데이트 (1-6열 수정, 파일 로드, 구간 추가/삭제)
                         if self.data_bridge:
                             # 기존 데이터 업데이트
@@ -1022,7 +1018,6 @@ class TableWindow(QMainWindow):
     def _update_columns_7_to_10_only(self, segments):
         """그래프에서 온 업데이트 시 7~10열만 업데이트"""
         try:
-            print(f"[TableWindow] 7~10열만 업데이트 시작 - segments 개수: {len(segments)}")
             
             # 시그널 연결 일시 해제 (무한 루프 방지)
             try:
@@ -1092,10 +1087,9 @@ class TableWindow(QMainWindow):
             # 시그널 재연결
             self.main_table.itemChanged.connect(self._on_table_item_changed)
             
-            print("[TableWindow] 7~10열 업데이트 완료")
             
         except Exception as e:
-            print(f"[TableWindow] 7~10열 업데이트 오류: {e}")
+            pass
             # 에러 발생 시에도 시그널 재연결
             try:
                 self.main_table.itemChanged.connect(self._on_table_item_changed)

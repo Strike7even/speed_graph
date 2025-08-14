@@ -291,7 +291,6 @@ class GraphWindow(QMainWindow):
     def _on_mouse_release(self, event):
         """마우스 릴리즈 이벤트"""
         if self.dragging:
-            print(f"[GraphWindow] 드래그 종료 - 현재 optimization_data 개수: {len(self.optimization_data)}")
             self.dragging = False
             
             # 드래그 완료 후 Y축 범위 재조정을 위해 그래프 업데이트
@@ -299,7 +298,6 @@ class GraphWindow(QMainWindow):
             
             # 변경된 데이터를 Data Bridge로 전송
             if self.data_bridge:
-                print(f"[GraphWindow] DataBridge로 데이터 전송: {len(self.optimization_data)}개 포인트")
                 graph_data = {
                     'optimization_velocity': self.optimization_data
                 }
@@ -308,21 +306,27 @@ class GraphWindow(QMainWindow):
             self.selected_point_index = None
     
     def _on_mouse_motion(self, event):
-        """마우스 이동 이벤트"""
+        """마우스 이동 이벤트 - 앵커 기반 전체 업데이트"""
         if self.dragging and event.inaxes == self.ax and self.selected_point_index is not None:
             # 새로운 Y 좌표 (속도값)으로 업데이트
             new_velocity = max(0, event.ydata)  # 속도는 0 이상
             
-            # 가속도 제한 검증
-            if self._validate_velocity_change(self.selected_point_index, new_velocity):
-                # 선택된 포인트의 속도 업데이트
-                self.optimization_data[self.selected_point_index]['velocity'] = new_velocity
+            # 앵커 기반 전체 그래프 업데이트
+            if self.data_bridge:
+                # 드래그된 포인트에서 앵커 속도 역계산
+                anchor_velocity = self.data_bridge._reverse_calculate_anchor(
+                    self.selected_point_index, new_velocity
+                )
                 
-                # 연결된 포인트들도 업데이트 (같은 시간대의 포인트)
-                current_time = self.optimization_data[self.selected_point_index]['time']
-                for i, point in enumerate(self.optimization_data):
-                    if abs(point['time'] - current_time) < 0.001 and i != self.selected_point_index:
-                        point['velocity'] = new_velocity
+                # 앵커 기반으로 전체 최적화 데이터 재계산
+                updated_data = self.data_bridge._update_from_anchor_change(anchor_velocity)
+                
+                if updated_data:
+                    # 전체 optimization_data 업데이트
+                    self.optimization_data = updated_data
+                else:
+                    # 폴백: 기존 방식으로 개별 포인트만 업데이트
+                    self.optimization_data[self.selected_point_index]['velocity'] = new_velocity
                 
                 # 그래프 실시간 업데이트 (드래그 중에는 Y축 범위 조정 안함)
                 self._update_graph(skip_axis_adjustment=True)

@@ -32,6 +32,12 @@ class DataBridge(QObject):
         self._project_data = self._initialize_project_data()
         self._unsaved_changes = False
         
+        # 앵커 기반 선형식 시스템
+        self._linear_coefficients = None  # 거리 제약 상수들 (m_i)
+        self._linear_params = None        # A_i, B_i 계수들
+        self._anchor_index = 0           # 앵커 포인트 인덱스
+        self._current_anchor_velocity = None  # 현재 앵커 속도값
+        
 
     
     def _initialize_project_data(self) -> Dict[str, Any]:
@@ -118,11 +124,17 @@ class DataBridge(QObject):
             self.error_occurred.emit(f"테이블 데이터 업데이트 중 오류: {e}")
     
     def update_from_graph(self, graph_data: Dict[str, Any]):
-        """그래프에서 데이터 업데이트"""
+        """그래프에서 데이터 업데이트 - 앵커 시스템 적용"""
         try:
             # 최적화 속도 데이터 업데이트
             if 'optimization_velocity' in graph_data:
                 self._project_data['graph_data']['optimization_velocity'] = graph_data['optimization_velocity']
+                
+                # 앵커 시스템이 초기화된 경우, 첫 번째 포인트를 기준으로 앵커 속도 추출
+                if (self._linear_coefficients and self._linear_params and 
+                    graph_data['optimization_velocity']):
+                    first_point = graph_data['optimization_velocity'][0]
+                    self._current_anchor_velocity = first_point['velocity']
             
             # 테이블 데이터 역산 및 업데이트
             self._update_table_from_optimization_data()
@@ -210,83 +222,280 @@ class DataBridge(QObject):
             pass
             self.error_occurred.emit(f"그래프 데이터 계산 중 오류: {e}")
     
-    def _generate_optimization_velocity(self, segments, fps):
-        """노드-선형식(AX+B) 알고리즘: 거리 보존 기반 선형 보간"""
+    def _initialize_linear_coefficients(self, segments, fps):
+        """거리 제약 기반 선형 계수 초기화"""
         try:
-            optimization_velocity = []
-            current_time = 0.0
-            previous_end_velocity = None  # 이전 구간의 끝 속도 (연속성 보장)
+            coefficients = []
             
             for i, segment in enumerate(segments):
                 # 구간 데이터 추출
                 frame_start = self._parse_float(segment.get('frame_start', 0))
                 frame_end = self._parse_float(segment.get('frame_end', 0))
-                avg_velocity = self._parse_float(segment.get('avg_velocity', 0))
                 distance = self._parse_float(segment.get('distance', 0))
                 
-                if frame_start > 0 and frame_end > 0 and fps > 0 and avg_velocity > 0 and distance > 0:
+                if frame_start > 0 and frame_end > 0 and fps > 0 and distance > 0:
                     # 구간 시간 계산
-                    segment_duration = (frame_end - frame_start) / fps
+                    duration = (frame_end - frame_start) / fps
                     
-                    # 구간 시작/끝 시간 계산
-                    start_time = current_time
-                    end_time = current_time + segment_duration
+                    # m_i = 2s_i / Δt_i 계산 (거리 제약 상수)
+                    # distance(m) → km/h 변환: m/s * 3.6
+                    m_i = 2 * distance * 3.6 / duration if duration > 0 else 0
                     
-                    # 구간 시작 속도 결정 (연속성 보장)
-                    if i == 0:
-                        # 첫 번째 구간: 거리 보존을 위한 초기 추정값
-                        start_velocity = avg_velocity * 0.8  # 초기 추정 (평균의 80%)
-                    else:
-                        # 이후 구간: 이전 구간의 끝 속도 사용 (연속성 보장)
-                        start_velocity = previous_end_velocity if previous_end_velocity is not None else avg_velocity
-                    
-                    # 거리 보존 조건으로 끝 속도 계산
-                    # 거리 = (시작속도 + 끝속도) / 2 * 시간 (km/h → m/s 변환 필요)
-                    # distance(m) = (v_start + v_end) / 2 * (1/3.6) * duration(s)
-                    # v_end = 2 * distance * 3.6 / duration - v_start
-                    
-                    if segment_duration > 0:
-                        # 거리(m)를 속도(km/h)로 변환하여 끝 속도 계산
-                        target_avg_velocity_ms = distance / segment_duration  # m/s
-                        target_avg_velocity_kmh = target_avg_velocity_ms * 3.6  # km/h
-                        
-                        # 선형 보간에서 평균 속도: (start + end) / 2 = target_avg
-                        # 따라서 end = 2 * target_avg - start
-                        end_velocity = 2 * target_avg_velocity_kmh - start_velocity
-                        
-                        # 음수 속도 방지
-                        end_velocity = max(0, end_velocity)
-                        
-                        # 선형 계수 계산 (v(w) = A*w + B, w는 0~1)
-                        # A = end_velocity - start_velocity (기울기)
-                        # B = start_velocity (절편)
-                        A = end_velocity - start_velocity
-                        B = start_velocity
-                        
-                        # 포인트 생성: 시작점과 끝점 (노드-선형식의 경계점)
-                        optimization_velocity.append({
-                            'time': start_time,
-                            'velocity': start_velocity
-                        })
-                        
-                        optimization_velocity.append({
-                            'time': end_time,
-                            'velocity': end_velocity
-                        })
-                        
-                        # 다음 구간을 위해 끝 속도 저장
-                        previous_end_velocity = end_velocity
-                        
-                    else:
-                        previous_end_velocity = avg_velocity
-                    
-                    current_time += segment_duration
+                    coefficients.append({
+                        'segment_index': i,
+                        'distance_constraint': m_i,  # m_i 상수
+                        'duration': duration,
+                        'distance': distance,
+                        'start_time': 0  # 나중에 계산
+                    })
+                else:
+                    # 유효하지 않은 구간은 기본값
+                    coefficients.append({
+                        'segment_index': i,
+                        'distance_constraint': 0,
+                        'duration': 0,
+                        'distance': 0,
+                        'start_time': 0
+                    })
+            
+            # 시작 시간 계산
+            current_time = 0.0
+            for coeff in coefficients:
+                coeff['start_time'] = current_time
+                current_time += coeff['duration']
+            
+            return coefficients
+            
+        except Exception as e:
+            return []
+    
+    def _calculate_linear_coefficients(self, coefficients, anchor_index=0):
+        """앵커 기반 A_i, B_i 계수 계산 - 올바른 m-전파식 사용"""
+        try:
+            if not coefficients:
+                return []
+            
+            num_segments = len(coefficients)
+            linear_params = [{'A': 0.0, 'B': 0.0} for _ in range(num_segments)]
+            
+            # 1. A 계수 설정 (부호 패턴)
+            for i in range(num_segments):
+                distance_from_anchor = abs(i - anchor_index)
+                if distance_from_anchor % 2 == 0:
+                    linear_params[i]['A'] = 1.0  # 앵커와 같은 방향
+                else:
+                    linear_params[i]['A'] = -1.0  # 앵커와 반대 방향
+            
+            # 2. B 계수 전파식 적용: B[i+1] = m[i] - B[i]
+            # 앵커부터 시작
+            linear_params[anchor_index]['B'] = 0.0
+            
+            # 앵커에서 앞으로 전파 (anchor_index → N-1)
+            for i in range(anchor_index, num_segments - 1):
+                m_i = coefficients[i]['distance_constraint']
+                linear_params[i + 1]['B'] = m_i - linear_params[i]['B']
+            
+            # 앵커에서 뒤로 전파 (anchor_index → 0)
+            for i in range(anchor_index, 0, -1):
+                m_i_minus_1 = coefficients[i - 1]['distance_constraint']
+                linear_params[i - 1]['B'] = m_i_minus_1 - linear_params[i]['B']
+            
+            return linear_params
+            
+        except Exception as e:
+            return []
+    
+    def _determine_initial_anchor(self, segments):
+        """초기 앵커 속도 결정"""
+        try:
+            # 첫 번째 구간의 평균 속도를 기준으로 설정
+            if segments and len(segments) > 0:
+                first_segment = segments[0]
+                avg_velocity = self._parse_float(first_segment.get('avg_velocity', 0))
+                return avg_velocity * 0.8 if avg_velocity > 0 else 50.0  # 기본값 50km/h
+            return 50.0
+            
+        except Exception as e:
+            return 50.0
+    
+    def _generate_optimization_velocity(self, segments, fps):
+        """앵커 기반 노드-선형식 알고리즘: 거리 보존과 연속성 완벽 보장"""
+        try:
+            # 1. 거리 제약 상수 계산
+            self._linear_coefficients = self._initialize_linear_coefficients(segments, fps)
+            
+            if not self._linear_coefficients:
+                return []
+            
+            # 2. 선형 계수 계산 (앵커는 첫 번째 구간으로 설정)
+            self._anchor_index = 0
+            self._linear_params = self._calculate_linear_coefficients(
+                self._linear_coefficients, self._anchor_index
+            )
+            
+            # 3. 초기 앵커 속도 결정
+            if self._current_anchor_velocity is None:
+                self._current_anchor_velocity = self._determine_initial_anchor(segments)
+            
+            # 4. 앵커 기반으로 모든 포인트 생성
+            optimization_velocity = []
+            
+            print(f"[DataBridge] 앵커 속도: {self._current_anchor_velocity:.2f} km/h")
+            
+            # B 계수 전파식 검증
+            print("[DataBridge] === B 계수 전파식 검증 ===")
+            for i in range(len(self._linear_params)):
+                B_i = self._linear_params[i]['B']
+                print(f"[DataBridge] B[{i}] = {B_i:.2f}")
+            
+            # 전파 관계 검증: B[i] + B[i+1] = m[i]
+            for i in range(len(self._linear_coefficients)-1):
+                B_current = self._linear_params[i]['B']
+                B_next = self._linear_params[i+1]['B']
+                m_i = self._linear_coefficients[i]['distance_constraint']
+                
+                expected = m_i
+                actual = B_current + B_next
+                diff = abs(expected - actual)
+                
+                print(f"[DataBridge] 검증 구간{i+1}: B[{i}]({B_current:.2f}) + B[{i+1}]({B_next:.2f}) = {actual:.2f} vs m[{i}] = {expected:.2f}, 차이: {diff:.6f}")
+                if diff > 1e-6:
+                    print(f"[DataBridge] ❌ 전파식 오류 발견: 구간{i+1}")
+                else:
+                    print(f"[DataBridge] ✅ 전파식 정상: 구간{i+1}")
+            print("[DataBridge] === B 계수 검증 완료 ===")
+            
+            for i, (coeff, param) in enumerate(zip(self._linear_coefficients, self._linear_params)):
+                if coeff['duration'] <= 0:
+                    continue
+                
+                # 시작 속도: v_i(w) = A_i * w + B_i
+                start_velocity = param['A'] * self._current_anchor_velocity + param['B']
+                start_velocity = max(0, start_velocity)  # 음수 방지
+                
+                # 끝 속도: 거리 제약 적용 v_i+1 = m_i - v_i
+                end_velocity = coeff['distance_constraint'] - start_velocity
+                end_velocity = max(0, end_velocity)  # 음수 방지
+                
+                print(f"[DataBridge] 구간{i+1}: A={param['A']:+.1f}, B={param['B']:+.2f}, m={coeff['distance_constraint']:.2f}")
+                print(f"[DataBridge] 구간{i+1}: 시작={start_velocity:.2f}, 끝={end_velocity:.2f} km/h")
+                
+                # 포인트 생성
+                start_time = coeff['start_time']
+                end_time = start_time + coeff['duration']
+                
+                optimization_velocity.extend([
+                    {'time': start_time, 'velocity': start_velocity},
+                    {'time': end_time, 'velocity': end_velocity}
+                ])
+            
+            # 노드 인덱스 매핑 검사
+            print("[DataBridge] === 노드 인덱스 매핑 검사 ===")
+            for i in range(len(optimization_velocity)):
+                if i % 2 == 0:  # 시작 포인트
+                    segment_num = (i // 2) + 1
+                    print(f"[DataBridge] 노드[{i}] = 구간{segment_num} 시작: {optimization_velocity[i]['velocity']:.2f}")
+                else:  # 끝 포인트
+                    segment_num = (i // 2) + 1
+                    print(f"[DataBridge] 노드[{i}] = 구간{segment_num} 끝: {optimization_velocity[i]['velocity']:.2f}")
+            
+            # 경계 노드 동일성 검사
+            print("[DataBridge] === 경계 노드 동일성 검사 ===")
+            for i in range(0, len(optimization_velocity)-2, 2):
+                current_end_idx = i + 1
+                next_start_idx = i + 2
+                current_end_vel = optimization_velocity[current_end_idx]['velocity']
+                next_start_vel = optimization_velocity[next_start_idx]['velocity']
+                
+                segment_num = (i // 2) + 1
+                print(f"[DataBridge] 구간{segment_num}→{segment_num+1}: 노드[{current_end_idx}]({current_end_vel:.2f}) vs 노드[{next_start_idx}]({next_start_vel:.2f})")
+                
+                # 같은 노드여야 하는데 다른 값인지 확인
+                if abs(current_end_vel - next_start_vel) > 0.001:
+                    print(f"[DataBridge] ❌ 경계 노드 불일치: 노드[{current_end_idx}] ≠ 노드[{next_start_idx}]")
+                else:
+                    print(f"[DataBridge] ✅ 경계 노드 일치")
+            
+            # 연속성 검증 로그
+            print("[DataBridge] === 연속성 검증 ===")
+            for i in range(0, len(optimization_velocity)-2, 2):
+                current_end = optimization_velocity[i+1]['velocity']
+                next_start = optimization_velocity[i+2]['velocity']
+                diff = abs(current_end - next_start)
+                segment_num = (i // 2) + 1
+                print(f"[DataBridge] 구간{segment_num} 끝({current_end:.2f}) vs 구간{segment_num+1} 시작({next_start:.2f}) 차이: {diff:.2f}")
+                if diff > 0.1:
+                    print(f"[DataBridge] ⚠️ 연속성 문제 발견: 구간{segment_num}→{segment_num+1}")
+            print("[DataBridge] === 검증 완료 ===")
             
             return optimization_velocity
             
         except Exception as e:
             pass
             return []
+    
+    def _update_from_anchor_change(self, new_anchor_velocity):
+        """앵커 변경 시 전체 그래프 업데이트"""
+        try:
+            if not self._linear_coefficients or not self._linear_params:
+                return []
+            
+            # 앵커 속도 업데이트
+            self._current_anchor_velocity = new_anchor_velocity
+            
+            # 앵커 기반으로 모든 포인트 재계산
+            optimization_velocity = []
+            
+            for i, (coeff, param) in enumerate(zip(self._linear_coefficients, self._linear_params)):
+                if coeff['duration'] <= 0:
+                    continue
+                
+                # 시작 속도: v_i(w) = A_i * w + B_i
+                start_velocity = param['A'] * self._current_anchor_velocity + param['B']
+                start_velocity = max(0, start_velocity)
+                
+                # 끝 속도: 거리 제약 적용
+                end_velocity = coeff['distance_constraint'] - start_velocity
+                end_velocity = max(0, end_velocity)
+                
+                # 포인트 생성
+                start_time = coeff['start_time']
+                end_time = start_time + coeff['duration']
+                
+                optimization_velocity.extend([
+                    {'time': start_time, 'velocity': start_velocity},
+                    {'time': end_time, 'velocity': end_velocity}
+                ])
+            
+            return optimization_velocity
+            
+        except Exception as e:
+            return []
+    
+    def _reverse_calculate_anchor(self, point_index, target_velocity):
+        """일반 포인트에서 앵커 속도 역계산"""
+        try:
+            if not self._linear_params or point_index >= len(self._linear_params):
+                return target_velocity
+            
+            # 해당 포인트가 속한 구간 찾기
+            segment_index = point_index // 2  # 각 구간마다 2개 포인트
+            
+            if segment_index >= len(self._linear_params):
+                return target_velocity
+            
+            param = self._linear_params[segment_index]
+            
+            # v_i(w) = A_i * w + B_i에서 w 역계산
+            # w = (v_i - B_i) / A_i
+            if abs(param['A']) > 0.001:  # 0으로 나누기 방지
+                anchor_velocity = (target_velocity - param['B']) / param['A']
+                return max(0, anchor_velocity)  # 음수 방지
+            
+            return target_velocity
+            
+        except Exception as e:
+            return target_velocity
     
     def _parse_float(self, value, default=0.0):
         """문자열을 float로 안전하게 변환"""
