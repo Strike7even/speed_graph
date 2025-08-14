@@ -371,11 +371,9 @@ class DataBridge(QObject):
                 
                 # 시작 속도: v_i(w) = A_i * w + B_i
                 start_velocity = param['A'] * self._current_anchor_velocity + param['B']
-                start_velocity = max(0, start_velocity)  # 음수 방지
                 
                 # 끝 속도: 거리 제약 적용 v_i+1 = m_i - v_i
                 end_velocity = coeff['distance_constraint'] - start_velocity
-                end_velocity = max(0, end_velocity)  # 음수 방지
                 
                 print(f"[DataBridge] 구간{i+1}: A={param['A']:+.1f}, B={param['B']:+.2f}, m={coeff['distance_constraint']:.2f}")
                 print(f"[DataBridge] 구간{i+1}: 시작={start_velocity:.2f}, 끝={end_velocity:.2f} km/h")
@@ -452,11 +450,9 @@ class DataBridge(QObject):
                 
                 # 시작 속도: v_i(w) = A_i * w + B_i
                 start_velocity = param['A'] * self._current_anchor_velocity + param['B']
-                start_velocity = max(0, start_velocity)
                 
                 # 끝 속도: 거리 제약 적용
                 end_velocity = coeff['distance_constraint'] - start_velocity
-                end_velocity = max(0, end_velocity)
                 
                 # 포인트 생성
                 start_time = coeff['start_time']
@@ -475,22 +471,31 @@ class DataBridge(QObject):
     def _reverse_calculate_anchor(self, point_index, target_velocity):
         """일반 포인트에서 앵커 속도 역계산"""
         try:
-            if not self._linear_params or point_index >= len(self._linear_params):
-                return target_velocity
-            
             # 해당 포인트가 속한 구간 찾기
             segment_index = point_index // 2  # 각 구간마다 2개 포인트
             
-            if segment_index >= len(self._linear_params):
+            # 수정된 가드 조건: segment_index 기준으로 검사
+            if not self._linear_params or not self._linear_coefficients or segment_index >= len(self._linear_params):
                 return target_velocity
             
             param = self._linear_params[segment_index]
             
+            # 끝점(odd index) 처리: 시작값으로 환산 후 역계산
+            if point_index % 2 == 1:  # 끝점인 경우
+                if segment_index < len(self._linear_coefficients):
+                    m_i = self._linear_coefficients[segment_index]['distance_constraint']
+                    # v_i_equiv = m_i - v_{i+1} (끝점을 시작값으로 환산)
+                    v_equiv = m_i - target_velocity
+                else:
+                    v_equiv = target_velocity
+            else:  # 시작점인 경우
+                v_equiv = target_velocity
+            
             # v_i(w) = A_i * w + B_i에서 w 역계산
-            # w = (v_i - B_i) / A_i
+            # w = (v_i_equiv - B_i) / A_i
             if abs(param['A']) > 0.001:  # 0으로 나누기 방지
-                anchor_velocity = (target_velocity - param['B']) / param['A']
-                return max(0, anchor_velocity)  # 음수 방지
+                anchor_velocity = (v_equiv - param['B']) / param['A']
+                return anchor_velocity
             
             return target_velocity
             
@@ -742,9 +747,16 @@ class DataBridge(QObject):
             self._project_data = data
             self._unsaved_changes = False
             
+            # 앵커 시스템 초기화 (로드된 데이터로부터 재계산)
+            self._linear_coefficients = None
+            self._linear_params = None
+            self._current_anchor_velocity = None
+            
             # 모든 윈도우에 업데이트 알림
             self.table_data_updated.emit({'segments': self._project_data['segments']})
-            self.graph_data_updated.emit(self._project_data['graph_data'])
+            
+            # 로드 직후 최신 알고리즘으로 그래프 재계산
+            self._calculate_graph_data()
             
 
             return True
