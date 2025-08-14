@@ -138,13 +138,6 @@ class GraphWindow(QMainWindow):
     def _on_data_updated(self, graph_data):
         """데이터 업데이트 처리"""
         try:
-            import traceback
-            print(f"[GraphWindow] _on_data_updated 호출 - optimization_velocity 개수: {len(graph_data.get('optimization_velocity', []))}")
-            print(f"[GraphWindow] 호출 스택:")
-            stack = traceback.extract_stack()
-            for frame in stack[-4:-1]:  # 최근 3개 프레임만 출력
-                print(f"  {frame.filename}:{frame.lineno} in {frame.name}")
-            print("---")
             
             # 데이터 저장
             self.optimization_data = graph_data.get('optimization_velocity', [])

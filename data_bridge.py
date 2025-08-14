@@ -188,7 +188,7 @@ class DataBridge(QObject):
                     
                     current_time += segment_duration
             
-            # Optimization 데이터 생성 (새로운 1/2 지점 중간점 기반 알고리즘)
+            # Optimization 데이터 생성 (노드-선형식 알고리즘)
             optimization_velocity = self._generate_optimization_velocity(segments, fps)
             
             # 그래프 데이터 업데이트
@@ -211,7 +211,7 @@ class DataBridge(QObject):
             self.error_occurred.emit(f"그래프 데이터 계산 중 오류: {e}")
     
     def _generate_optimization_velocity(self, segments, fps):
-        """새로운 Optimization Velocity 알고리즘: 1/2 지점 중간점 기반 직선 연결"""
+        """노드-선형식(AX+B) 알고리즘: 거리 보존 기반 선형 보간"""
         try:
             optimization_velocity = []
             current_time = 0.0
@@ -222,40 +222,48 @@ class DataBridge(QObject):
                 frame_start = self._parse_float(segment.get('frame_start', 0))
                 frame_end = self._parse_float(segment.get('frame_end', 0))
                 avg_velocity = self._parse_float(segment.get('avg_velocity', 0))
+                distance = self._parse_float(segment.get('distance', 0))
                 
-                if frame_start > 0 and frame_end > 0 and fps > 0 and avg_velocity > 0:
+                if frame_start > 0 and frame_end > 0 and fps > 0 and avg_velocity > 0 and distance > 0:
                     # 구간 시간 계산
                     segment_duration = (frame_end - frame_start) / fps
                     
-                    # 구간 시작/중간/끝 시간 계산
+                    # 구간 시작/끝 시간 계산
                     start_time = current_time
-                    mid_time = current_time + (segment_duration / 2)  # 1/2 지점
                     end_time = current_time + segment_duration
                     
-                    # 구간 시작 속도 결정
+                    # 구간 시작 속도 결정 (연속성 보장)
                     if i == 0:
-                        # 첫 번째 구간: avg_velocity를 시작 속도로 사용
-                        start_velocity = avg_velocity
+                        # 첫 번째 구간: 거리 보존을 위한 초기 추정값
+                        start_velocity = avg_velocity * 0.8  # 초기 추정 (평균의 80%)
                     else:
                         # 이후 구간: 이전 구간의 끝 속도 사용 (연속성 보장)
                         start_velocity = previous_end_velocity if previous_end_velocity is not None else avg_velocity
                     
-                    # 중간점 속도는 avg_velocity 사용
-                    mid_velocity = avg_velocity
+                    # 거리 보존 조건으로 끝 속도 계산
+                    # 거리 = (시작속도 + 끝속도) / 2 * 시간 (km/h → m/s 변환 필요)
+                    # distance(m) = (v_start + v_end) / 2 * (1/3.6) * duration(s)
+                    # v_end = 2 * distance * 3.6 / duration - v_start
                     
-                    # 시작점 → 중간점 직선의 기울기 계산
-                    # velocity = start_velocity + slope * (time - start_time)
-                    time_diff = mid_time - start_time
-                    if time_diff > 0:
-                        slope = (mid_velocity - start_velocity) / time_diff
+                    if segment_duration > 0:
+                        # 거리(m)를 속도(km/h)로 변환하여 끝 속도 계산
+                        target_avg_velocity_ms = distance / segment_duration  # m/s
+                        target_avg_velocity_kmh = target_avg_velocity_ms * 3.6  # km/h
                         
-                        # 직선을 끝점까지 연장하여 끝점 속도 계산
-                        end_velocity = start_velocity + slope * (end_time - start_time)
+                        # 선형 보간에서 평균 속도: (start + end) / 2 = target_avg
+                        # 따라서 end = 2 * target_avg - start
+                        end_velocity = 2 * target_avg_velocity_kmh - start_velocity
                         
                         # 음수 속도 방지
                         end_velocity = max(0, end_velocity)
                         
-                        # 포인트 생성: 시작점과 끝점만 (중간점은 계산용으로만 사용)
+                        # 선형 계수 계산 (v(w) = A*w + B, w는 0~1)
+                        # A = end_velocity - start_velocity (기울기)
+                        # B = start_velocity (절편)
+                        A = end_velocity - start_velocity
+                        B = start_velocity
+                        
+                        # 포인트 생성: 시작점과 끝점 (노드-선형식의 경계점)
                         optimization_velocity.append({
                             'time': start_time,
                             'velocity': start_velocity
